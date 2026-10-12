@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, post, type Kid, type PublicTopic } from "@/lib/client";
 import { Shell, PageHeading, Empty, ErrorNote } from "./ui";
@@ -42,6 +43,14 @@ export function Learn({ childId = "" }: { childId?: string }) {
         eyebrow="THE LEARNING CORNER"
         title="What will we discover today?"
         description="Choose a topic. Take your time. Let curiosity lead the way."
+        action={
+          <Link
+            className="button secondary"
+            href={"/homework?child=" + selected}
+          >
+            Scan homework →
+          </Link>
+        }
       />
       <ErrorNote error={error} />
       {!loaded ? (

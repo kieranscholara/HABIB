@@ -1,6 +1,16 @@
+import { VoiceActivity } from "./voice-activity";
 // Capture PCM directly so Safari and Chrome do not depend on a provider accepting WebM/AAC.
-export async function record(onLimit: () => void) {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+export async function record(
+  onLimit: () => void,
+  options?: { onSilence: () => void; onQuiet: () => void },
+) {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+  });
   const context = new AudioContext();
   try {
     await context.resume();
@@ -14,6 +24,8 @@ export async function record(onLimit: () => void) {
     mute = context.createGain();
   mute.gain.value = 0;
   const chunks: Float32Array[] = [];
+  const vad = options ? new VoiceActivity() : null;
+  let notified = false;
   let count = 0,
     closed = false;
   processor.onaudioprocess = (e) => {
@@ -21,6 +33,20 @@ export async function record(onLimit: () => void) {
     const data = e.inputBuffer.getChannelData(0).slice(0, available);
     chunks.push(data);
     count += data.length;
+    if (vad && !notified) {
+      let energy = 0;
+      for (const sample of data) energy += sample * sample;
+      const activity = vad.sample(
+        Math.sqrt(energy / Math.max(1, data.length)),
+        (data.length / context.sampleRate) * 1000,
+      );
+      if (activity === "end" || activity === "quiet") {
+        notified = true;
+        queueMicrotask(() =>
+          activity === "end" ? options!.onSilence() : options!.onQuiet(),
+        );
+      }
+    }
   };
   source.connect(processor);
   processor.connect(mute);

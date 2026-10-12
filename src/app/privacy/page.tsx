@@ -27,20 +27,22 @@ export default function Page() {
           Speech recordings are sent to Azure for recognition, then discarded by
           the app. Short generated audio and recognition results may be held in
           server memory for up to one minute for safe retries. When enabled,
-          short tutoring questions are sent to OpenAI to select a teaching
-          action. Homework photos are sent to OpenAI for extraction and are not
-          written to storage. Avoid faces, names or personal information in
-          photos. Provider retention and processing contracts must be reviewed
-          separately.
+          short tutoring questions and up to eight recent dialogue messages are
+          sent to OpenAI for contextual maths explanations. Dialogue context is
+          kept in the current browser tab. Homework photos are sent to OpenAI
+          for extraction and are not written to storage. Avoid faces, names or
+          personal information in photos. Provider retention and processing
+          contracts must be reviewed separately.
         </p>
         <h2>What is saved</h2>
         <p>
           We save parent account details, child nicknames and learning
           preferences, authorisation records, lesson state, structured
           correct/incorrect attempts, progress, subscription status and metered
-          usage. Child input text is not saved as a full transcript. Verified
-          tutor captions are retained for at most 24 hours by the retention
-          task. Financial records held by Stripe follow its requirements.
+          usage. Child input text is not saved as a full transcript. Tutor reply
+          captions, including generated explanations, are retained for at most
+          24 hours by the retention task. Financial records held by Stripe
+          follow its requirements.
         </p>
         <h2>Your choices</h2>
         <p>
@@ -53,11 +55,12 @@ export default function Page() {
         <h2>Services and safeguards</h2>
         <p>
           Production uses Supabase authentication and PostgreSQL, Azure speech,
-          OpenAI image extraction and Stripe billing. No advertising SDKs or
-          child-to-child chat are included. HTTPS, ownership checks, short-lived
-          sessions, rate limits and transactional allowances protect the
-          learning flow. Contact the operating organisation for privacy requests
-          once its contact details are published.
+          OpenAI image extraction and conversational explanations, and Stripe
+          billing. No advertising SDKs or child-to-child chat are included.
+          HTTPS, ownership checks, short-lived sessions, rate limits and
+          transactional allowances protect the learning flow. Contact the
+          operating organisation for privacy requests once its contact details
+          are published.
         </p>
         <h2>Before launch</h2>
         <p>

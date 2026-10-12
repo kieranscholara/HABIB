@@ -73,6 +73,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     ["/dashboard", "⌂", "Overview"],
     ["/children", "☺", "My children"],
     ["/learn", "✳", "Learning corner"],
+    ["/homework", "▣", "Homework helper"],
     ["/settings", "⚙", "Family settings"],
   ];
   return (

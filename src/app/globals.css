@@ -2161,3 +2161,173 @@ button {
     transition: none !important;
   }
 }
+.scan-toggle {
+  margin-top: 20px;
+}
+.homework-scanner {
+  padding: 22px 24px;
+  background: #f4f5e9;
+  border-bottom: 1px solid var(--border);
+}
+.scan-heading {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+}
+.scan-heading > span {
+  font-size: 30px;
+  color: #8fa173;
+}
+.scan-heading h3 {
+  font-size: 16px;
+  margin-bottom: 7px;
+}
+.scan-heading p {
+  font-size: 11px;
+  color: #7f916e;
+  margin: 0;
+}
+.scan-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 17px 0 12px;
+}
+.homework-scanner > small {
+  font-size: 9px;
+  color: #879875;
+  line-height: 1.8;
+  display: block;
+}
+.scan-preview {
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  border-radius: 9px;
+  margin-top: 18px;
+}
+.scan-confirm {
+  margin-top: 20px;
+  background: #fffefa;
+  border: 1px solid #dfe7d2;
+  padding: 20px;
+  border-radius: 11px;
+}
+.scan-confirm p {
+  font-size: 12px;
+  color: #84966e;
+}
+.question-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 15px 0;
+}
+.question-options button {
+  font-size: 10px;
+  background: #edf2e2;
+  padding: 10px;
+  border-radius: 6px;
+  color: #7c9264;
+  border: 1px solid transparent;
+}
+.question-options button.selected {
+  border-color: #819e65;
+}
+.voice-session {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  background: #f0f4e8;
+  border: 1px solid #e0e8d5;
+  border-radius: 10px;
+  margin-bottom: 18px;
+}
+.voice-session.active {
+  background: #e8f0de;
+  border-color: #b8cda1;
+}
+.voice-session strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+}
+.voice-session span {
+  display: block;
+  font-size: 9px;
+  color: #92a17d;
+  margin-top: 6px;
+  line-height: 1.7;
+}
+.provider-note {
+  font-size: 9px;
+  color: #a08e65;
+  line-height: 1.8;
+  margin-top: 15px;
+}
+.homework-start-card {
+  max-width: 650px;
+  background: #fffefa;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 38px;
+}
+.homework-start-card h2 {
+  margin-top: 23px;
+}
+.homework-start-card p {
+  color: #849773;
+  font-size: 12px;
+}
+.homework-start-card > small {
+  display: block;
+  color: #9bad88;
+  font-size: 10px;
+  line-height: 1.9;
+  margin-top: 23px;
+}
+.profile-select {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  font-size: 11px;
+  color: #82986b;
+  margin: 25px 0;
+}
+.profile-select select {
+  padding: 13px;
+  border: 1px solid #dce6ce;
+  border-radius: 8px;
+  background: #fafcf3;
+  font-size: 12px;
+  color: #5d7b48;
+}
+@media (max-width: 760px) {
+  .voice-session {
+    align-items: start;
+    flex-wrap: wrap;
+    padding: 13px;
+  }
+  .voice-session > .button {
+    font-size: 9px;
+  }
+  .homework-scanner {
+    padding: 18px;
+  }
+  .scan-confirm {
+    padding: 16px;
+  }
+  .homework-start-card {
+    padding: 25px;
+  }
+  .scan-actions .button {
+    font-size: 10px;
+    padding: 10px 12px;
+  }
+  .sidebar nav a {
+    font-size: 8px;
+    padding: 8px 5px;
+  }
+}

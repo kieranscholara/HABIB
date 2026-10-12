@@ -181,3 +181,52 @@ it("uses formatted speech while retaining the original lesson caption", async ()
   expect(options.body).not.toContain("20 ÷ 4");
   expect(response.headers.get("Content-Type")).toBe("audio/wav");
 });
+it("extracts multiple questions without persisting the photo or exposing answers", async () => {
+  const { homeworkRequest } = await import("../src/lib/providers");
+  const { vi } = await import("vitest");
+  vi.stubEnv("HABIB_OPENAI_KEY", "fixture_not_a_credential");
+  fetchProvider.mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                supported: true,
+                questions: [
+                  {
+                    question: "Find three quarters of twenty.",
+                    kind: "fraction_of",
+                    a: 20,
+                    b: 4,
+                    c: 3,
+                    operator: "+",
+                  },
+                  {
+                    question: "Calculate 12 × 6.",
+                    kind: "arithmetic",
+                    a: 12,
+                    b: 6,
+                    c: 1,
+                    operator: "*",
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      }),
+    ),
+  );
+  const req = new NextRequest("http://localhost:3000", {
+    method: "POST",
+    headers: { "Content-Type": "image/jpeg" },
+    body: new Uint8Array([255, 216, 255, 217]),
+  });
+  const result = await (await homeworkRequest(req, parentId, sessionId)).json();
+  expect(result.questions).toHaveLength(2);
+  expect(result.requiresConfirmation).toBe(true);
+  expect(result.questions[0]).not.toHaveProperty("answer");
+  expect(result.questions[0].problem).toBe("3/4 of 20");
+  vi.unstubAllEnvs();
+});

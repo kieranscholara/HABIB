@@ -23,3 +23,7 @@ Every new parent gets a 7-day trial with 5 metered voice minutes. Paid entitleme
 ## Operational limitations
 
 All local/cloud database changes are serialized with a transaction lock for conservative correctness. This is suitable for an initial controlled pilot; load testing and a per-family locking design are required before wider rollout. A recognition/synthesis operation reserves bounded quota before calling Azure. Raw recordings are never persisted, and generated audio is cached only briefly. A successful recognition consumes audio duration even if the tester subsequently discards its transcript. Provider outages and abusive retry patterns still require project-level budgets and alerts.
+
+## Conversation validation
+
+Test natural Maltese follow-up questions, photo confirmation, conversational context, low-confidence recognition and manual interruption on real phones. Conversation uses Azure recognition, OpenAI text generation and Azure synthesis in separate bounded requests. It does not use the OpenAI Realtime API. Images remain restricted to supported mathematical types; chat remains a primary-school maths tutor. Automatic voice sends require confidence of at least 0.85; evaluate and calibrate this threshold with held-out Maltese speech before a child pilot. Test poor connections and browser autoplay gating. No new database migration is needed for this update: homework remains in the existing JSON field.

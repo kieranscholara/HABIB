@@ -36,7 +36,7 @@ import {
   transcribeRequest,
   homeworkRequest,
 } from "@/lib/providers";
-import { conversationalHint } from "@/lib/tutor-provider";
+import { conversationalReply, historySchema } from "@/lib/tutor-provider";
 import { homeworkSchema } from "@/lib/homework";
 import { billing, webhook } from "@/lib/billing";
 export const runtime = "nodejs";
@@ -79,6 +79,9 @@ async function handler(req: NextRequest, context: Context) {
           process.env.STRIPE_SECRET_KEY && process.env.STRIPE_FAMILY_PRICE_ID
         ),
         contentRequiresReview: true,
+        conversationConfigured:
+          process.env.HABIB_AI_ENABLED !== "false" &&
+          !!process.env.HABIB_OPENAI_KEY,
       });
     if (path.startsWith("auth/")) {
       if (method !== "POST")
@@ -442,6 +445,8 @@ async function handler(req: NextRequest, context: Context) {
             .object({
               clientTurnId: id,
               text: z.string().trim().min(1).max(500),
+              history: historySchema.optional().default([]),
+              conversation: z.boolean().optional().default(false),
             })
             .strict(),
         );
@@ -456,13 +461,23 @@ async function handler(req: NextRequest, context: Context) {
           ),
         );
         if (previous[0]) return json(JSON.parse(previous[0].response_json));
-        const action =
-          numericAnswer(input.text) === null
-            ? await conversationalHint(
+        const baseline = teaching(
+          context.topic,
+          Math.min(context.session.step, context.topic.exercises.length - 1),
+          context.session.mistakes,
+          input.text,
+          context.child.language,
+        );
+        const aiReply =
+          numericAnswer(input.text) === null &&
+          baseline.safetyState === "normal"
+            ? await conversationalReply(
                 input.text,
                 context.topic,
                 context.session.step,
                 context.child.language,
+                input.history,
+                context.session.status === "complete",
               )
             : null;
         return await transaction(async (db) => {
@@ -477,7 +492,7 @@ async function handler(req: NextRequest, context: Context) {
             [sessionId, input.clientTurnId],
           );
           if (existing[0]) return json(JSON.parse(existing[0].response_json));
-          if (session.status !== "active")
+          if (session.status !== "active" && !input.conversation)
             throw new AppError(
               "SESSION_NOT_ACTIVE",
               "This lesson is complete.",
@@ -491,22 +506,35 @@ async function handler(req: NextRequest, context: Context) {
             );
           const result = teaching(
             topic,
-            session.step,
+            Math.min(session.step, topic.exercises.length - 1),
             session.mistakes,
             input.text,
             child.language,
           );
-          if (result.correct === null && result.safetyState === "normal") {
-            if (action === "repeat")
-              result.text =
-                topic.exercises[session.step]?.prompt[child.language] ||
-                result.text;
-            if (action === "redirect")
-              result.text =
-                (child.language === "mt"
-                  ? "Ejja nibqgħu fuq il-matematika. "
-                  : "Let’s stay with our maths lesson. ") +
-                (topic.exercises[session.step]?.prompt[child.language] || "");
+          if (session.status === "complete") {
+            if (result.safetyState === "normal")
+              result.text = teaching(
+                topic,
+                session.step,
+                session.mistakes,
+                input.text,
+                child.language,
+              ).text;
+            result.correct = null;
+            result.nextStep = session.step;
+            result.nextMistakes = session.mistakes;
+          }
+          if (
+            result.correct === null &&
+            result.safetyState === "normal" &&
+            aiReply &&
+            session.step === context.session.step &&
+            session.turn_count === context.session.turn_count &&
+            session.homework_json === context.session.homework_json
+          ) {
+            result.text = aiReply.reply;
+            result.safetyState = aiReply.safetyState;
+            result.type = "explain";
           }
           const done = result.nextStep >= topic.exercises.length;
           const now = new Date().toISOString();
@@ -543,6 +571,7 @@ async function handler(req: NextRequest, context: Context) {
             complete: done,
             safetyState: result.safetyState,
             type: result.type,
+            conversational: !!aiReply,
             tutorMs: Math.round(performance.now() - start),
           };
           await db.run(
@@ -573,7 +602,7 @@ async function handler(req: NextRequest, context: Context) {
         return await transcribeRequest(req, user.id, sessionId);
       if (parts[2] === "speech" && method === "POST")
         return await speechRequest(req, user.id, sessionId);
-      if (parts[2] === "homework" && method === "POST")
+      if (parts[2] === "homework" && parts.length === 3 && method === "POST")
         return await homeworkRequest(req, user.id, sessionId);
       if (
         parts[2] === "homework" &&
@@ -582,18 +611,31 @@ async function handler(req: NextRequest, context: Context) {
       ) {
         const input = await body(req, homeworkSchema);
         return await transaction(async (db) => {
-          const { session } = await ownedSession(db, user.id, sessionId);
-          if (session.turn_count > 0)
-            throw new AppError(
-              "HOMEWORK_START_REQUIRED",
-              "Start a fresh lesson before confirming a photo question.",
-              409,
+          const { session } = await ownedSession(db, user.id, sessionId, true);
+          let targetId = sessionId;
+          if (session.turn_count > 0 || session.status === "complete") {
+            targetId = uuid();
+            await db.run(
+              "UPDATE tutor_sessions SET status='ended',ended_at=? WHERE id=? AND status='active'",
+              [new Date().toISOString(), sessionId],
             );
-          await db.run(
-            "UPDATE tutor_sessions SET homework_json=?,step=0,mistakes=0 WHERE id=?",
-            [JSON.stringify(input), sessionId],
-          );
-          return json({ ok: true });
+            await db.run(
+              "INSERT INTO tutor_sessions(id,child_id,topic_id,status,homework_json,started_at) VALUES(?,?,?,?,?,?)",
+              [
+                targetId,
+                session.child_id,
+                session.topic_id,
+                "active",
+                JSON.stringify(input),
+                new Date().toISOString(),
+              ],
+            );
+          } else
+            await db.run(
+              "UPDATE tutor_sessions SET homework_json=?,step=0,mistakes=0 WHERE id=?",
+              [JSON.stringify(input), sessionId],
+            );
+          return json({ id: targetId });
         });
       }
     }
