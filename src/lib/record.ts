@@ -1,8 +1,13 @@
-import { VoiceActivity } from "./voice-activity";
+import { VoiceActivity, ConversationActivity } from "./voice-activity";
 // Capture PCM directly so Safari and Chrome do not depend on a provider accepting WebM/AAC.
 export async function record(
   onLimit: () => void,
-  options?: { onSilence: () => void; onQuiet: () => void },
+  options?: {
+    onSilence: () => void;
+    onQuiet: () => void;
+    isPlaying?: () => boolean;
+    onInterrupt?: () => void;
+  },
 ) {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
@@ -25,21 +30,47 @@ export async function record(
   mute.gain.value = 0;
   const chunks: Float32Array[] = [];
   const vad = options ? new VoiceActivity() : null;
+  const conversation = options?.isPlaying ? new ConversationActivity() : null;
+  let wasPlaying = false,
+    interrupted = false,
+    limitNotified = false;
   let notified = false;
   let count = 0,
     closed = false;
   processor.onaudioprocess = (e) => {
+    const playing = options?.isPlaying?.() ?? false;
+    if (wasPlaying && !playing && !interrupted) {
+      chunks.length = 0;
+      count = 0;
+    }
+    wasPlaying = playing;
     const available = Math.max(0, context.sampleRate * 30 - count);
     const data = e.inputBuffer.getChannelData(0).slice(0, available);
     chunks.push(data);
     count += data.length;
+    // Keep only a short pre-roll while the tutor speaks. When the child
+    // interrupts, this includes their first syllable, not the whole AI reply.
+    if (playing && !interrupted) {
+      const max = Math.round(context.sampleRate * 0.4);
+      while (count > max && chunks.length) {
+        const remove = Math.min(count - max, chunks[0].length);
+        if (remove === chunks[0].length) chunks.shift();
+        else chunks[0] = chunks[0].slice(remove);
+        count -= remove;
+      }
+    }
     if (vad && !notified) {
       let energy = 0;
       for (const sample of data) energy += sample * sample;
-      const activity = vad.sample(
-        Math.sqrt(energy / Math.max(1, data.length)),
-        (data.length / context.sampleRate) * 1000,
-      );
+      const level = Math.sqrt(energy / Math.max(1, data.length)),
+        duration = (data.length / context.sampleRate) * 1000;
+      const activity = conversation
+        ? conversation.sample(level, duration, playing)
+        : vad.sample(level, duration);
+      if (activity === "interrupt") {
+        interrupted = true;
+        queueMicrotask(() => options!.onInterrupt?.());
+      }
       if (activity === "end" || activity === "quiet") {
         notified = true;
         queueMicrotask(() =>
@@ -51,11 +82,20 @@ export async function record(
   source.connect(processor);
   processor.connect(mute);
   mute.connect(context.destination);
-  const timer = setTimeout(onLimit, 30000);
+  const timer = setInterval(() => {
+    if (
+      !limitNotified &&
+      count >= context.sampleRate * 30 &&
+      !options?.isPlaying?.()
+    ) {
+      limitNotified = true;
+      onLimit();
+    }
+  }, 250);
   return async () => {
     if (closed) throw new Error("Recording already stopped");
     closed = true;
-    clearTimeout(timer);
+    clearInterval(timer);
     processor.disconnect();
     source.disconnect();
     stream.getTracks().forEach((t) => t.stop());

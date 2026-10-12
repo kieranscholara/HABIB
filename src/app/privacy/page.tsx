@@ -27,12 +27,17 @@ export default function Page() {
           Speech recordings are sent to Azure for recognition, then discarded by
           the app. Short generated audio and recognition results may be held in
           server memory for up to one minute for safe retries. When enabled,
-          short tutoring questions and up to eight recent dialogue messages are
-          sent to OpenAI for contextual maths explanations. Dialogue context is
-          kept in the current browser tab. Homework photos are sent to OpenAI
-          for extraction and are not written to storage. Avoid faces, names or
-          personal information in photos. Provider retention and processing
-          contracts must be reviewed separately.
+          short tutoring questions, up to eight recent dialogue messages and
+          previous tutor explanations from the current lesson are sent to OpenAI
+          for contextual maths explanations that avoid repetition. Child
+          dialogue context is kept in the current browser tab. In voice
+          conversation, the microphone stays active while the tutor speaks so
+          you can interrupt; only your captured turn is sent for recognition.
+          Camera previews stay on your device until you capture a photo.
+          Homework photos are sent to OpenAI for extraction and are not written
+          to storage. Avoid faces, names or personal information in photos.
+          Provider retention and processing contracts must be reviewed
+          separately.
         </p>
         <h2>What is saved</h2>
         <p>

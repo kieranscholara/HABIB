@@ -55,8 +55,78 @@ it("passes bounded conversation history and verified homework context to the mod
   );
   expect(reply?.reply).toContain("four equal parts");
   const payload = JSON.parse(provider.mock.calls[0][1].body);
-  expect(payload.messages[1].content).toBe("I am confused about quarters.");
-  expect(payload.messages[0].content).toContain("Only the server grades");
+  expect(
+    payload.messages.some(
+      (message: { content: string }) =>
+        message.content === "I am confused about quarters.",
+    ),
+  ).toBe(true);
+  expect(
+    payload.messages
+      .filter((message: { role: string }) => message.role === "system")
+      .map((message: { content: string }) => message.content)
+      .join(" "),
+  ).toContain("Only the server grades");
+});
+it("rejects a repeated model reply and explicitly asks for a new representation when confused", async () => {
+  vi.stubEnv("HABIB_OPENAI_KEY", "fixture_not_a_credential");
+  const old =
+    "Draw four circles. Share twenty counters between them, one at a time.";
+  provider.mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                reply: old,
+                mathClaims: [],
+                safetyState: "normal",
+              }),
+            },
+          },
+        ],
+      }),
+    ),
+  );
+  expect(
+    await conversationalReply(
+      "I still don't understand",
+      topicById("Y5-FRACTIONS")!,
+      0,
+      "en",
+      [],
+      false,
+      [old],
+    ),
+  ).toBeNull();
+  const payload = JSON.parse(provider.mock.calls[0][1].body);
+  expect(payload.messages[0].content).toContain("one tiny action");
+  expect(payload.messages[0].content).toContain("different one");
+});
+it("rejects parroting the original question on the first request for help", async () => {
+  vi.stubEnv("HABIB_OPENAI_KEY", "fixture_not_a_credential");
+  const topic = topicById("Y5-FRACTIONS")!;
+  provider.mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                reply: topic.exercises[0].prompt.en,
+                mathClaims: [],
+                safetyState: "normal",
+              }),
+            },
+          },
+        ],
+      }),
+    ),
+  );
+  expect(
+    await conversationalReply("I do not understand", topic, 0, "en", []),
+  ).toBeNull();
 });
 it("falls back when model arithmetic is wrong or the provider fails", async () => {
   vi.stubEnv("HABIB_OPENAI_KEY", "fixture_not_a_credential");

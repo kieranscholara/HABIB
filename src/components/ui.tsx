@@ -1,4 +1,5 @@
 "use client";
+import { appVersion } from "@/lib/version";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -102,6 +103,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <h4>Little steps add up.</h4>
           <p>A few minutes of practice can make all the difference.</p>
         </div>
+        <small className="app-version">HABIB {appVersion}</small>
         <div className="sidebar-account">
           <div className="avatar small-avatar">
             {me?.parent.display_name.charAt(0) || "…"}

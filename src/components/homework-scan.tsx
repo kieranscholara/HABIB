@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { Homework } from "@/lib/homework";
+import { CameraCapture } from "./camera-capture";
 export type ScannedQuestion = Homework & { question: string; problem: string };
 export function HomeworkScan({
   disabled,
@@ -19,6 +20,7 @@ export function HomeworkScan({
     [preview, setPreview] = useState<string | null>(null),
     [error, setError] = useState(""),
     [saving, setSaving] = useState(false),
+    [camera, setCamera] = useState(false),
     [kind, setKind] = useState<Homework["kind"]>("arithmetic");
   useEffect(() => {
     setSelected(0);
@@ -29,11 +31,16 @@ export function HomeworkScan({
     },
     [preview],
   );
-  function choose(file?: File) {
+  async function choose(file?: File) {
     if (!file) return;
     setPreview(URL.createObjectURL(file));
     setError("");
-    void onFile(file);
+    onDiscard();
+    try {
+      await onFile(file);
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
   async function confirm(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -71,32 +78,41 @@ export function HomeworkScan({
         </div>
       </div>
       <div className="scan-actions">
-        <label className="button secondary upload-button">
+        <button
+          className="button secondary"
+          type="button"
+          disabled={disabled || saving}
+          onClick={() => setCamera(true)}
+        >
           Take a photo
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            disabled={disabled || saving}
-            onChange={(e) => {
-              choose(e.target.files?.[0]);
-              e.target.value = "";
-            }}
-          />
-        </label>
+        </button>
         <label className="button secondary upload-button">
-          Choose an image
+          Upload photo
           <input
             type="file"
             accept="image/*"
             disabled={disabled || saving}
             onChange={(e) => {
-              choose(e.target.files?.[0]);
+              void choose(e.target.files?.[0]);
               e.target.value = "";
             }}
           />
         </label>
       </div>
+      {camera && (
+        <CameraCapture
+          onClose={() => setCamera(false)}
+          onPhoto={(file) => {
+            setCamera(false);
+            void choose(file);
+          }}
+        />
+      )}
+      {error && !question && (
+        <p role="alert" className="error-note">
+          {error}
+        </p>
+      )}
       <small>
         Calculations, simple word problems, fractions, percentages and
         rectangles. Avoid names and faces.

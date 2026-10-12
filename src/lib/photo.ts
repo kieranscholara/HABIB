@@ -1,11 +1,24 @@
 export async function preparePhoto(file: File): Promise<Blob> {
   if (file.size > 20 * 1024 * 1024)
     throw new Error("Choose a photo smaller than 20 MB.");
-  let bitmap: ImageBitmap;
+  let bitmap: ImageBitmap | HTMLImageElement;
+  let imageUrl: string | null = null;
   try {
-    bitmap = await createImageBitmap(file);
+    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
   } catch {
-    throw new Error("Use a JPEG or PNG photo that your browser can open.");
+    // Some Safari versions decode images through <img> but not ImageBitmap.
+    imageUrl = URL.createObjectURL(file);
+    try {
+      const image = new Image();
+      image.src = imageUrl;
+      await image.decode();
+      bitmap = image;
+    } catch {
+      URL.revokeObjectURL(imageUrl);
+      throw new Error(
+        "This image could not be opened. Take a photo with the camera, or upload a JPEG, PNG or WebP. For HEIC photos, export a JPEG first.",
+      );
+    }
   }
   try {
     const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
@@ -31,6 +44,7 @@ export async function preparePhoto(file: File): Promise<Blob> {
       throw new Error("Crop the photo to one question and try again.");
     return blob;
   } finally {
-    bitmap.close();
+    if ("close" in bitmap) bitmap.close();
+    if (imageUrl) URL.revokeObjectURL(imageUrl);
   }
 }

@@ -202,10 +202,10 @@ async function startTestLesson(page: import("@playwright/test").Page) {
   );
   return session;
 }
-function silentWav() {
-  const bytes = Buffer.alloc(32044);
+function silentWav(seconds = 1) {
+  const bytes = Buffer.alloc(44 + 32000 * seconds);
   bytes.write("RIFF", 0);
-  bytes.writeUInt32LE(32036, 4);
+  bytes.writeUInt32LE(36 + 32000 * seconds, 4);
   bytes.write("WAVE", 8);
   bytes.write("fmt ", 12);
   bytes.writeUInt32LE(16, 16);
@@ -216,11 +216,14 @@ function silentWav() {
   bytes.writeUInt16LE(2, 32);
   bytes.writeUInt16LE(16, 34);
   bytes.write("data", 36);
-  bytes.writeUInt32LE(32000, 40);
+  bytes.writeUInt32LE(32000 * seconds, 40);
   return bytes;
 }
-async function fakeMicrophone(page: import("@playwright/test").Page) {
-  await page.addInitScript(() => {
+async function fakeMicrophone(
+  page: import("@playwright/test").Page,
+  manual = false,
+) {
+  await page.addInitScript((manual) => {
     let stopped = 0;
     Object.defineProperty(window, "testStoppedTracks", { get: () => stopped });
     Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
@@ -232,8 +235,14 @@ async function fakeMicrophone(page: import("@playwright/test").Page) {
           gain = context.createGain();
         tone.connect(gain);
         gain.connect(destination);
-        gain.gain.setValueAtTime(0.06, context.currentTime);
-        gain.gain.setValueAtTime(0, context.currentTime + 0.45);
+        gain.gain.value = 0;
+        const speak = () => {
+          gain.gain.cancelScheduledValues(context.currentTime);
+          gain.gain.setValueAtTime(0.08, context.currentTime);
+          gain.gain.setValueAtTime(0, context.currentTime + 0.45);
+        };
+        (window as unknown as { testSpeak: () => void }).testSpeak = speak;
+        if (!manual) speak();
         tone.start();
         const track = destination.stream.getAudioTracks()[0],
           original = track.stop.bind(track);
@@ -246,7 +255,7 @@ async function fakeMicrophone(page: import("@playwright/test").Page) {
         return destination.stream;
       },
     });
-  });
+  }, manual);
 }
 
 test("homework scan, corrected confirmation and follow-up chat", async ({
@@ -290,7 +299,7 @@ test("homework scan, corrected confirmation and follow-up chat", async ({
   });
   await page
     .locator("input[type=file]")
-    .nth(1)
+    .nth(0)
     .setInputFiles({
       name: "homework.png",
       mimeType: "image/png",
@@ -330,10 +339,194 @@ test("homework scan, corrected confirmation and follow-up chat", async ({
     ).completed_lessons,
   ).toBe(1);
 });
-test("voice auto-sends, speaks and listens again; interruption and stopping release the microphone", async ({
+test("camera capture uploads a JPEG and releases the camera after taking the photo", async ({
   page,
 }) => {
-  await fakeMicrophone(page);
+  await page.addInitScript(() => {
+    let stopped = 0;
+    Object.defineProperty(window, "testCameraStops", { get: () => stopped });
+    Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+      value: async (constraints: MediaStreamConstraints) => {
+        if (!constraints.video || constraints.audio !== false)
+          throw new Error("Expected a camera request without audio");
+        const canvas = document.createElement("canvas");
+        canvas.width = 640;
+        canvas.height = 480;
+        const ctx = canvas.getContext("2d")!;
+        const draw = () => {
+          ctx.fillStyle = "white";
+          ctx.fillRect(0, 0, 640, 480);
+          ctx.fillStyle = "black";
+          ctx.font = "40px sans-serif";
+          ctx.fillText("20 / 4", 80, 160);
+        };
+        draw();
+        const stream = canvas.captureStream(10),
+          timer = setInterval(draw, 50),
+          track = stream.getVideoTracks()[0],
+          original = track.stop.bind(track);
+        track.stop = () => {
+          stopped++;
+          clearInterval(timer);
+          original();
+        };
+        return stream;
+      },
+    });
+  });
+  const session = await startTestLesson(page);
+  let uploaded = false;
+  await page.route("**/api/v1/sessions/*/homework", (route) => {
+    const bytes = route.request().postDataBuffer()!;
+    expect(route.request().headers()["content-type"]).toBe("image/jpeg");
+    expect([...bytes.subarray(0, 2)]).toEqual([255, 216]);
+    expect(bytes.length).toBeLessThan(4 * 1024 * 1024);
+    uploaded = true;
+    return route.fulfill({
+      json: {
+        requiresConfirmation: true,
+        questions: [
+          {
+            kind: "fraction_of",
+            a: 20,
+            b: 4,
+            c: 1,
+            operator: "+",
+            question: "One quarter of 20",
+            problem: "1/4 of 20",
+          },
+        ],
+      },
+    });
+  });
+  await page.goto("/tutor?session=" + session + "&scan=1");
+  await page.getByRole("button", { name: "Take a photo", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Capture photo", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "Close camera" }).click();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { testCameraStops: number }).testCameraStops,
+    ),
+  ).toBeGreaterThanOrEqual(1);
+  await page.getByRole("button", { name: "Take a photo", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Capture photo", exact: true }),
+  ).toBeEnabled();
+  await page
+    .getByRole("button", { name: "Capture photo", exact: true })
+    .click();
+  await expect(page.getByText("Check before we explain.")).toBeVisible();
+  expect(uploaded).toBe(true);
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { testCameraStops: number }).testCameraStops,
+    ),
+  ).toBeGreaterThanOrEqual(1);
+  await page.getByRole("button", { name: "Confirm & explain" }).click();
+  await expect(page.locator(".topic-card")).toContainText("1/4 of 20");
+});
+test("camera denial and an unreadable upload do not block a later photo; Safari image fallback works", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+      value: async () => {
+        throw new DOMException("Camera denied", "NotAllowedError");
+      },
+    });
+    Object.defineProperty(window, "createImageBitmap", { value: undefined });
+  });
+  const session = await startTestLesson(page);
+  await page.route("**/api/v1/sessions/*/homework", (route) =>
+    route.fulfill({
+      json: {
+        questions: [
+          {
+            kind: "arithmetic",
+            a: 10,
+            b: 5,
+            c: 1,
+            operator: "+",
+            question: "Add ten and five",
+            problem: "10 + 5",
+          },
+        ],
+      },
+    }),
+  );
+  await page.goto("/tutor?session=" + session + "&scan=1");
+  await page.getByRole("button", { name: "Take a photo", exact: true }).click();
+  await expect(
+    page.getByText("Allow camera access in your browser, or use Upload photo."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Close camera" }).click();
+  await page.locator("input[type=file]").setInputFiles({
+    name: "bad.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("not an image"),
+  });
+  await expect(page.getByText(/This image could not be opened/)).toBeVisible();
+  const png = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 32;
+    canvas.height = 32;
+    return canvas.toDataURL("image/png").split(",")[1];
+  });
+  await page.locator("input[type=file]").setInputFiles({
+    name: "good.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(png, "base64"),
+  });
+  await expect(page.getByText("Check before we explain.")).toBeVisible();
+  await page.getByRole("button", { name: "Confirm & explain" }).click();
+  await expect(page.locator(".topic-card")).toContainText("10 + 5");
+});
+test("repeated requests for simpler explanations change approach without advancing the exercise", async ({
+  request,
+}) => {
+  await signup(request);
+  const childId = await kid(request);
+  const session = (
+    await (
+      await request.post("/api/v1/sessions", {
+        headers: origin,
+        data: { childId, topicId: "Y5-FRACTIONS" },
+      })
+    ).json()
+  ).id;
+  const replies: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    const response = await request.post(`/api/v1/sessions/${session}/turns`, {
+      headers: origin,
+      data: {
+        clientTurnId: randomUUID(),
+        text: "ma fhimtx",
+        conversation: true,
+      },
+    });
+    expect(response.status()).toBe(200);
+    const reply = await response.json();
+    expect(reply.step).toBe(0);
+    expect(reply.correct).toBeNull();
+    replies.push(reply.text);
+  }
+  expect(new Set(replies).size).toBe(4);
+});
+test("voice speech automatically interrupts playback and preserves the new utterance", async ({
+  page,
+}) => {
+  await fakeMicrophone(page, true);
+  await page.addInitScript(() => {
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = async function () {
+      await play.call(this);
+      if (this.duration > 1)
+        (window as unknown as { testPlayer: HTMLMediaElement }).testPlayer =
+          this;
+    };
+  });
   const session = await startTestLesson(page);
   let recognised = 0;
   await page.route("**/api/v1/sessions/*/transcribe", (route) => {
@@ -347,17 +540,43 @@ test("voice auto-sends, speaks and listens again; interruption and stopping rele
     });
   });
   await page.route("**/api/v1/sessions/*/speech", (route) =>
-    route.fulfill({ contentType: "audio/wav", body: silentWav() }),
+    route.fulfill({ contentType: "audio/wav", body: silentWav(5) }),
   );
   await page.goto("/tutor?session=" + session);
   await page.getByRole("button", { name: "Start voice conversation" }).click();
-  await expect(page.locator(".bubble.you")).toHaveCount(1, {
-    timeout: 15000,
-  });
-  await page.getByRole("button", { name: "Interrupt & speak" }).click();
   await expect(
     page.getByText("Listening… pause when you finish", { exact: true }),
   ).toBeVisible();
+  await page.evaluate(() =>
+    (window as unknown as { testSpeak: () => void }).testSpeak(),
+  );
+  await expect(page.locator(".bubble.you")).toHaveCount(1, {
+    timeout: 15000,
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          !!(window as unknown as { testPlayer?: HTMLMediaElement })
+            .testPlayer &&
+          !(window as unknown as { testPlayer: HTMLMediaElement }).testPlayer
+            .paused,
+      ),
+    )
+    .toBe(true);
+  await page.evaluate(() =>
+    (window as unknown as { testSpeak: () => void }).testSpeak(),
+  );
+  await expect(
+    page.getByText("Listening… pause when you finish", { exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { testPlayer: HTMLMediaElement }).testPlayer
+          .paused,
+    ),
+  ).toBe(true);
   await expect(page.locator(".bubble.you")).toHaveCount(2, {
     timeout: 15000,
   });

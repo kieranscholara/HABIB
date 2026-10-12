@@ -55,6 +55,7 @@ export function TutorRoom({
     audioUrl = useRef<string | null>(null),
     generation = useRef(0),
     voice = useRef(false),
+    playing = useRef(false),
     turnRef = useRef<Turn[]>([]),
     lessonRef = useRef<Lesson | null>(null),
     pending = useRef<{ id: string; text: string } | null>(null),
@@ -72,6 +73,7 @@ export function TutorRoom({
     updateTurns(data.turns);
   }
   function clearAudio() {
+    playing.current = false;
     if (audio.current) {
       audio.current.onended = null;
       audio.current.onerror = null;
@@ -109,6 +111,7 @@ export function TutorRoom({
     if (current !== generation.current || (e as Error).name === "AbortError")
       return;
     switchVoice(false);
+    cancel();
     setError(
       (e as Error).name === "NotAllowedError"
         ? "Allow microphone access or type your question instead."
@@ -325,21 +328,65 @@ export function TutorRoom({
       player.src = audioUrl.current;
       player.onended = () => {
         if (current !== generation.current) return;
-        busy.current = false;
-        setState("idle");
-        if (continueListening && voice.current) void beginRecording(true);
+        playing.current = false;
+        if (continueListening && voice.current && stop.current) {
+          setState("listening");
+        } else {
+          busy.current = false;
+          setState("idle");
+        }
       };
       player.onerror = () =>
         fail(
           new Error("Audio could not play. Tap Listen to hear the caption."),
           current,
         );
+      if (continueListening && voice.current) {
+        playing.current = true;
+        const end = await record(
+          () => {
+            if (current === generation.current) void actions.current.finish();
+          },
+          {
+            isPlaying: () => playing.current,
+            onInterrupt: () => {
+              if (current !== generation.current || !voice.current) return;
+              clearAudio();
+              setState("listening");
+            },
+            onSilence: () => {
+              if (current === generation.current) void actions.current.finish();
+            },
+            onQuiet: () => {
+              if (current !== generation.current) return;
+              actions.current.pause();
+              setError(
+                "I didn’t hear speech. Start the conversation when you’re ready.",
+              );
+            },
+          },
+        );
+        if (current !== generation.current || !voice.current) {
+          await end();
+          return;
+        }
+        stop.current = end;
+        // Speech may already have interrupted while the capture was opening.
+        if (!playing.current) return;
+      }
       await player.play();
       setTiming((t) => ({
         ...t,
         speech: Math.round(performance.now() - start),
       }));
     } catch (e) {
+      if (
+        continueListening &&
+        voice.current &&
+        stop.current &&
+        !playing.current
+      )
+        return;
       fail(e, current);
     }
   }
@@ -530,7 +577,7 @@ export function TutorRoom({
             </div>
             {showScanner && (
               <HomeworkScan
-                disabled={working || !homework}
+                disabled={working}
                 questions={questions}
                 onFile={photo}
                 onConfirm={confirmHomework}
@@ -638,7 +685,7 @@ export function TutorRoom({
                     className="text-button"
                     onClick={() => void interrupt()}
                   >
-                    {voiceEnabled ? "Interrupt & speak" : "Stop audio"}
+                    Stop audio
                   </button>
                 )}
               </div>
@@ -679,7 +726,11 @@ export function TutorRoom({
                                   ? "Agħfas biex titkellem"
                                   : "Tap to speak"}
                   </strong>
-                  <span>Or ask a question in chat below</span>
+                  <span>
+                    {voiceEnabled
+                      ? "Speak at any time to interrupt. Pause to send."
+                      : "Or ask a question in chat below"}
+                  </span>
                 </div>
               </div>
               {state === "confirming" && (

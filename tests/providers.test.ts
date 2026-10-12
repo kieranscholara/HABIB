@@ -1,4 +1,4 @@
-import { it, expect, vi, beforeEach } from "vitest";
+import { it, expect, vi, beforeEach, afterEach } from "vitest";
 import { randomUUID } from "node:crypto";
 import { NextRequest } from "next/server";
 process.env.HABIB_DATABASE_PATH =
@@ -10,7 +10,12 @@ vi.mock("../src/lib/server", () => ({
   azure: () => ({ key: "fixture_not_a_credential", region: "westeurope" }),
   providerFetch: fetchProvider,
 }));
-import { transcribeRequest, speechRequest } from "../src/lib/providers";
+import {
+  transcribeRequest,
+  speechRequest,
+  homeworkRequest,
+} from "../src/lib/providers";
+afterEach(() => vi.unstubAllEnvs());
 import { transaction } from "../src/lib/data/db";
 const parentId = randomUUID(),
   childId = randomUUID(),
@@ -77,6 +82,93 @@ function recording(requestId = randomUUID(), bytes = wav()) {
     body: bytes,
   });
 }
+it("sends homework image bytes to the vision provider and returns only confirmed supported parameters", async () => {
+  vi.stubEnv("HABIB_OPENAI_KEY", "fixture_not_a_credential");
+  const bytes = new Uint8Array([255, 216, 255, 224, 0, 1, 255, 217]);
+  fetchProvider.mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                supported: true,
+                questions: [
+                  {
+                    question: "One quarter of 20",
+                    kind: "fraction_of",
+                    a: 20,
+                    b: 4,
+                    c: 1,
+                    operator: "+",
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      }),
+    ),
+  );
+  const result = await homeworkRequest(
+    new NextRequest("http://localhost:3000", {
+      method: "POST",
+      headers: { "Content-Type": "image/jpeg" },
+      body: bytes,
+    }),
+    parentId,
+    sessionId,
+  );
+  const data = await result.json();
+  expect(data.requiresConfirmation).toBe(true);
+  expect(data.questions[0]).toMatchObject({
+    a: 20,
+    b: 4,
+    c: 1,
+    problem: "1/4 of 20",
+  });
+  const payload = JSON.parse(fetchProvider.mock.calls[0][1].body);
+  expect(payload.messages[1].content[0].image_url.url).toBe(
+    `data:image/jpeg;base64,${Buffer.from(bytes).toString("base64")}`,
+  );
+  expect(payload.messages[0].content).toContain("Never guess");
+  const session = await transaction((db) =>
+    db.all<{ homework_json: string | null }>(
+      "SELECT homework_json FROM tutor_sessions WHERE id=?",
+      [sessionId],
+    ),
+  );
+  expect(session[0].homework_json).toBeNull();
+});
+it("rejects unreadable or unsupported photo data instead of presenting a guessed question", async () => {
+  vi.stubEnv("HABIB_OPENAI_KEY", "fixture_not_a_credential");
+  const req = (bytes: Uint8Array) =>
+    new NextRequest("http://localhost:3000", {
+      method: "POST",
+      headers: { "Content-Type": "image/jpeg" },
+      body: new Uint8Array(bytes),
+    });
+  await expect(
+    homeworkRequest(req(new Uint8Array([1, 2, 3])), parentId, sessionId),
+  ).rejects.toMatchObject({ code: "IMAGE_INVALID" });
+  expect(fetchProvider).not.toHaveBeenCalled();
+  fetchProvider.mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({ supported: false, questions: [] }),
+            },
+          },
+        ],
+      }),
+    ),
+  );
+  await expect(
+    homeworkRequest(req(new Uint8Array([255, 216, 255])), parentId, sessionId),
+  ).rejects.toMatchObject({ code: "HOMEWORK_UNSUPPORTED" });
+});
 it("rejects invalid recordings before consuming quota", async () => {
   await expect(
     transcribeRequest(

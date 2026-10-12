@@ -2193,6 +2193,26 @@ button {
   flex-wrap: wrap;
   margin: 17px 0 12px;
 }
+.camera-capture {
+  padding: 1rem;
+  border: 1px solid var(--border, #d9e2d5);
+  border-radius: 1rem;
+  margin-block: 1rem;
+}
+.app-version {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.75rem;
+  color: #667361;
+}
+.camera-capture video {
+  width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  border-radius: 0.8rem;
+  background: #16251c;
+  margin-bottom: 1rem;
+}
 .homework-scanner > small {
   font-size: 9px;
   color: #879875;

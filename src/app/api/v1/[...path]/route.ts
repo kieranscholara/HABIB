@@ -37,7 +37,13 @@ import {
   homeworkRequest,
 } from "@/lib/providers";
 import { conversationalReply, historySchema } from "@/lib/tutor-provider";
+import {
+  simplerExplanation,
+  repeatedExplanation,
+  needsSimplerExplanation,
+} from "@/lib/explanation";
 import { homeworkSchema } from "@/lib/homework";
+import { appVersion } from "@/lib/version";
 import { billing, webhook } from "@/lib/billing";
 export const runtime = "nodejs";
 const account = z.object({
@@ -65,6 +71,7 @@ async function handler(req: NextRequest, context: Context) {
     if (method !== "GET") origin(req);
     if (path === "status" && method === "GET")
       return json({
+        version: appVersion,
         mode: isProduction() ? "production" : "development",
         speechConfigured:
           process.env.HABIB_SPEECH_ENABLED !== "false" &&
@@ -461,6 +468,15 @@ async function handler(req: NextRequest, context: Context) {
           ),
         );
         if (previous[0]) return json(JSON.parse(previous[0].response_json));
+        const priorReplies = await transaction(async (db) => {
+          const rows = await db.all<{ response_json: string }>(
+            "SELECT response_json FROM tutor_turns WHERE session_id=? ORDER BY created_at ASC LIMIT 60",
+            [sessionId],
+          );
+          return rows.map(
+            (row) => JSON.parse(row.response_json).text as string,
+          );
+        });
         const baseline = teaching(
           context.topic,
           Math.min(context.session.step, context.topic.exercises.length - 1),
@@ -478,6 +494,7 @@ async function handler(req: NextRequest, context: Context) {
                 context.child.language,
                 input.history,
                 context.session.status === "complete",
+                priorReplies,
               )
             : null;
         return await transaction(async (db) => {
@@ -534,6 +551,21 @@ async function handler(req: NextRequest, context: Context) {
           ) {
             result.text = aiReply.reply;
             result.safetyState = aiReply.safetyState;
+            result.type = "explain";
+          }
+          if (
+            result.correct !== true &&
+            result.safetyState === "normal" &&
+            !aiReply &&
+            (needsSimplerExplanation(input.text) ||
+              repeatedExplanation(result.text, priorReplies))
+          ) {
+            result.text = simplerExplanation(
+              topic,
+              session.step,
+              child.language,
+              priorReplies,
+            );
             result.type = "explain";
           }
           const done = result.nextStep >= topic.exercises.length;
