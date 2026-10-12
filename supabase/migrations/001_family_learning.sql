@@ -1,0 +1,45 @@
+CREATE TABLE IF NOT EXISTS parents (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, password_hash TEXT, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS auth_sessions (token_hash TEXT PRIMARY KEY, parent_id TEXT NOT NULL REFERENCES parents(id) ON DELETE CASCADE, expires_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS children (id TEXT PRIMARY KEY, parent_id TEXT NOT NULL REFERENCES parents(id) ON DELETE CASCADE, nickname TEXT NOT NULL, school_year INTEGER NOT NULL CHECK(school_year BETWEEN 4 AND 6), language TEXT NOT NULL CHECK(language IN ('mt','en')), created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS consents (id TEXT PRIMARY KEY, parent_id TEXT NOT NULL REFERENCES parents(id) ON DELETE CASCADE, child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE, policy_version TEXT NOT NULL, purpose TEXT NOT NULL, verification_method TEXT NOT NULL, granted_at TEXT NOT NULL, revoked_at TEXT);
+CREATE INDEX IF NOT EXISTS consent_child_idx ON consents(child_id);
+CREATE TABLE IF NOT EXISTS curriculum_reviews (topic_id TEXT PRIMARY KEY, reviewer TEXT NOT NULL, reviewed_at TEXT NOT NULL, content_hash TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS tutor_sessions (id TEXT PRIMARY KEY, child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE, topic_id TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active','complete','ended')), step INTEGER NOT NULL DEFAULT 0, mistakes INTEGER NOT NULL DEFAULT 0, turn_count INTEGER NOT NULL DEFAULT 0, homework_json TEXT, started_at TEXT NOT NULL, ended_at TEXT);
+CREATE TABLE IF NOT EXISTS tutor_turns (id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES tutor_sessions(id) ON DELETE CASCADE, client_turn_id TEXT NOT NULL, turn_index INTEGER NOT NULL, response_json TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(session_id,client_turn_id), UNIQUE(session_id,turn_index));
+CREATE TABLE IF NOT EXISTS question_attempts (id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES tutor_sessions(id) ON DELETE CASCADE, question_id TEXT NOT NULL, is_correct INTEGER NOT NULL CHECK(is_correct IN (0,1)), hints_used INTEGER NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS topic_progress (child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE, topic_id TEXT NOT NULL, questions_attempted INTEGER NOT NULL DEFAULT 0, correct_count INTEGER NOT NULL DEFAULT 0, completed_lessons INTEGER NOT NULL DEFAULT 0, last_practised_at TEXT NOT NULL, PRIMARY KEY(child_id,topic_id));
+CREATE TABLE IF NOT EXISTS subscriptions (parent_id TEXT PRIMARY KEY REFERENCES parents(id) ON DELETE CASCADE, stripe_customer_id TEXT UNIQUE, stripe_subscription_id TEXT UNIQUE, status TEXT NOT NULL, period_start TEXT NOT NULL, period_end TEXT NOT NULL, voice_limit_ms INTEGER NOT NULL, updated_at TEXT NOT NULL, cancel_at_period_end INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS usage_events (id TEXT PRIMARY KEY, parent_id TEXT NOT NULL REFERENCES parents(id) ON DELETE CASCADE, session_id TEXT REFERENCES tutor_sessions(id) ON DELETE CASCADE, kind TEXT NOT NULL, units INTEGER NOT NULL, period_key TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('reserved','complete','failed')), created_at TEXT NOT NULL, UNIQUE(parent_id,id));
+CREATE INDEX IF NOT EXISTS usage_parent_period_idx ON usage_events(parent_id,period_key);
+CREATE TABLE IF NOT EXISTS stripe_events (event_id TEXT PRIMARY KEY, event_type TEXT NOT NULL, processed_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY, hits INTEGER NOT NULL, expires_at TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS curriculum_topics (id TEXT PRIMARY KEY, year_group INTEGER NOT NULL CHECK(year_group BETWEEN 4 AND 6), title_mt TEXT NOT NULL, title_en TEXT NOT NULL, outcome_reference TEXT, published BOOLEAN NOT NULL DEFAULT FALSE);
+CREATE TABLE IF NOT EXISTS lessons (id TEXT PRIMARY KEY, topic_id TEXT NOT NULL REFERENCES curriculum_topics(id), content_json JSONB NOT NULL, version INTEGER NOT NULL DEFAULT 1, review_status TEXT NOT NULL DEFAULT 'draft' CHECK(review_status IN ('draft','review','approved','rejected')), reviewed_at TIMESTAMPTZ);
+CREATE TABLE IF NOT EXISTS questions (id TEXT PRIMARY KEY, topic_id TEXT NOT NULL REFERENCES curriculum_topics(id), prompt_mt TEXT NOT NULL, prompt_en TEXT NOT NULL, answer_json JSONB NOT NULL, approved BOOLEAN NOT NULL DEFAULT FALSE);
+ALTER TABLE public.parents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.auth_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.children ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.consents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.curriculum_reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tutor_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tutor_turns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.question_attempts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.topic_progress ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.usage_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.stripe_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rate_limits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.curriculum_topics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lessons ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.questions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY parent_profile_read ON parents FOR SELECT TO authenticated USING (id=auth.uid()::text);
+CREATE POLICY parent_children_read ON children FOR SELECT TO authenticated USING (parent_id=auth.uid()::text);
+CREATE POLICY parent_consents_read ON consents FOR SELECT TO authenticated USING (parent_id=auth.uid()::text);
+CREATE POLICY parent_subscriptions_read ON subscriptions FOR SELECT TO authenticated USING (parent_id=auth.uid()::text);
+CREATE POLICY parent_usage_read ON usage_events FOR SELECT TO authenticated USING (parent_id=auth.uid()::text);
+CREATE POLICY parent_progress_read ON topic_progress FOR SELECT TO authenticated USING (EXISTS(SELECT 1 FROM children WHERE children.id=topic_progress.child_id AND children.parent_id=auth.uid()::text));
+CREATE POLICY parent_sessions_read ON tutor_sessions FOR SELECT TO authenticated USING (EXISTS(SELECT 1 FROM children WHERE children.id=tutor_sessions.child_id AND children.parent_id=auth.uid()::text));
+CREATE POLICY published_topics_read ON curriculum_topics FOR SELECT TO authenticated USING (published=true);
+-- Application route handlers perform validated writes with the backend database connection.
+-- No browser policies for auth tokens, answers, tutor captions, rate-limit state or Stripe events.

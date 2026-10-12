@@ -1,25 +1,52 @@
-# Ħabib AI — Milestone 1
+# Ħabib AI
 
-An adult-test prototype of a Maltese Year 5 fractions tutor. This implements the specification's first assignment, not the subscription MVP.
+A responsive family mathematics application for Malta, with parent accounts, two child profiles, authorisation controls, eighteen Year 4–6 topic packs, guided bilingual lessons, saved progress, voice metering, homework extraction, privacy export/erasure and Stripe subscription integration.
 
-## Develop
+**Current status:** the local application is runnable. External accounts, production deployment, provider integration validation, teacher/native-speaker reviews and legal/safeguarding approvals are not completed. This is not certified ready for real children or paid launch.
 
-Node 24, npm 11. `npm ci`, then `npm run dev`. `npm test`, `npm run typecheck`, and `npm run build` validate the local workflow.
+## Run on your Mac
 
-Default mode is **local**: a deterministic lesson can be completed with text; speech is explicitly disabled. Begin the lesson and try `Ma fhimtx`, `4`, `6`, `ħamsa`, `15` for a five-turn check.
+Install Node.js **24 LTS**. Download **Code → Download ZIP** from GitHub and extract it, then:
 
-## Live provider setup
+```bash
+cd ~/Downloads/HABIB-main
+npm ci
+npm run dev
+```
 
-Copy `.env.example` to `.env.local`, securely enter Azure Speech credentials/region and `HABIB_OPENAI_KEY`, then set `HABIB_LIVE_PROVIDERS=true` and restart. `HABIB_OPENAI_KEY` maps to the OpenAI API credential (the alternate name supports cloud secret bindings). Credentials remain server-side. Allow `api.openai.com`, `<region>.stt.speech.microsoft.com`, and `<region>.tts.speech.microsoft.com`.
+Open `http://localhost:3000`. Create a parent test account (a fictional email works locally), add a child profile in My children, authorise maths tutoring, and choose a topic in Learning corner. Year 5 fractions accepts `5`, `15`, `6`, `12`; try a wrong answer or ask for a hint first. Progress appears in Overview and survives restart. No invitation or provider account is needed for local text learning.
 
-Use HTTPS for microphone access except local development. Click record, speak, then stop within 30 seconds. Review/edit the transcription and Send. Click Listen for Azure `mt-MT-GraceNeural` speech. Playback starts on explicit user action; browser restrictions can require pressing Listen again. No raw audio or transcripts are written to disk or a database. Session transcript exists only in the current browser tab and clears on End & clear session.
+Local data is stored in the ignored `.habib/development.sqlite` database. Local passwords use salted scrypt hashes and sessions use hashed opaque tokens. Do not copy this database into a public repository. Production disables the local database and local authentication.
 
-The browser captures PCM using Web Audio and resamples to mono 16 kHz WAV for Azure REST recognition. ScriptProcessor is deprecated but broadly supported; replacing it with an AudioWorklet is future work. Audio upload and synthesis use 15-second provider timeouts. Timing includes transcription/upload, tutor request, and synthesis/playback preparation; human transcript-confirmation time is excluded.
+## Add speech and homework
 
-## Scope and limitations
+Copy `.env.example` to `.env.local`. Set your Azure Speech key and its actual region. The initial suggested region is `westeurope`; your key must belong to a resource in that region. Restart the app. The app also accepts the legacy `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` names locally. The `HABIB_` names avoid reserved cloud secret prefixes. Maltese uses `mt-MT` recognition and `mt-MT-GraceNeural` speech; English uses `en-GB` and `en-GB-SoniaNeural`. Use HTTPS on phones, or localhost on your Mac. Record up to 30 seconds, check the editable transcript, send it, and click Listen. Audio is not auto-played.
 
-Only three quarters of 20 is supported. Deterministic application code validates answers and controls progression. OpenAI selects the single applicable verified template, rather than generating unchecked mathematical prose. The arithmetic is verified by tests; Maltese phrasing and lesson material **have not received teacher or native-speaker approval**.
+`HABIB_OPENAI_KEY` enables AI selection of a verified teaching action and image extraction. It is an OpenAI API key, kept server-side under an alternate variable name. Without it, deterministic guided lessons still work. Photo support is limited to one clear arithmetic expression with non-negative operands no larger than 10,000; ambiguous or unsupported photos ask for teacher help. Confirm the numbers and operation before practising. No image is persisted.
 
-The prototype trusts client-held lesson state and has no authentication, durable quotas, billing, storage, or production safeguarding implementation. Do not expose live provider mode publicly: deploy only behind an external authenticated access gate for adult testers. Origin checks do not replace authentication or prevent direct API clients consuming provider resources. Do not use with real children until production controls and review gates exist.
+Mathematical answers and lesson progression are controlled by the application, never by client-held state or unverified generated prose. The AI selects hints/repeat/redirect actions; captions come from the lesson material. Provider failures fall back to verified text guidance. Speech failures release family allowance; uncertain reservations after a crash are conservatively charged at their reserved bound to prevent overspending.
 
-Provider integrations are implemented but cannot be claimed validated without credentials. Required next gates: five live Maltese turns, native-speaker review, child-speech/code-switching evaluation under an approved protocol, actual latency/cost measurement, iOS Safari and Android Chrome tests. Local tests do not establish speech quality or MVP readiness.
+## Validate
+
+```bash
+npm test
+npm run typecheck
+npm run build
+npm run test:browser
+```
+
+On a Mac, first install the test browser with `npx playwright install chromium`. Cloud tests use the installed `/usr/bin/chromium`; `CHROMIUM_PATH` can override it. Unit tests include mathematical cases, authorisation, quota concurrency and PostgreSQL RLS using PGlite. Browser/API tests cover signup, profiles, consent, lessons, progress persistence, cross-family denial, turn retries, export and erasure. These tests use fictional identities and no real payments or speech.
+
+## Deploy
+
+Follow [the deployment guide](docs/deployment.md). Production uses Supabase Auth and its PostgreSQL database, with server-only database credentials. Supabase is not simulated locally. Configure provider accounts and securely enter credentials; apply migrations; complete curriculum and launch reviews; deploy to your own Vercel project with `APP_ENV=production` and your HTTPS app URL. Vercel deployments always enforce production mode.
+
+No payment becomes active from a browser redirect. Stripe signatures, webhook event IDs and current subscription state determine entitlement. The 7-day trial includes 5 combined recognition/synthesis minutes; a configured paid plan defaults to 120 minutes/month and two profiles. Review pricing against actual speech cost. All lessons require an unexpired trial or active entitlement; text learning remains available when only voice allowance is exhausted.
+
+## Curriculum and retention
+
+All eighteen topic packs begin as drafts. Production hides and refuses unreviewed lessons. A real teacher must review every prompt, hint, answer, Maltese translation and official outcome mapping. Run `npm run curriculum -- list` to inspect, then `npm run curriculum -- approve TOPIC REAL_REVIEWER VERIFIED_OUTCOME` only after that review. Review records include a content hash; changing the lesson invalidates approval. `npm run curriculum -- revoke TOPIC` withdraws approval.
+
+Schedule `npm run retention` at least hourly. It deletes tutor captions after 24 hours, removes expired auth/rate records, ends stale sessions and reconciles stranded voice reservations conservatively. Structured progress is retained until parent/child deletion. Raw speech and photos are processed and discarded; short generated audio and speech recognition results are cached in memory for up to one minute for retries. Parent dashboards show structured learning statistics, not full child conversations. Implement and approve provider/backup retention arrangements before launch.
+
+See [release gates](docs/release-gates.md) for what remains outside the verified local workflow.

@@ -1,13 +1,17 @@
-# Live five-turn review
+# Live Maltese voice review
 
-Adult testers only; no child recordings. Configure providers as described in README.
+Use adult testers and fictional profiles until the approved family-pilot procedure is in place. Configure `HABIB_SPEECH_KEY` and its matching `HABIB_SPEECH_REGION`, restart, create a test parent account and authorise a Year 5 profile.
 
-1. Select the Year 5 fractions lesson and begin.
-2. Ask “Ma fhimtx kif insib tliet kwarti ta’ 20.” Review the transcript; listen to the reply.
-3. Answer incorrectly twice. Verify the lesson does not advance and a worked hint appears.
-4. Say “ħamsa”. Verify the tutor asks about three groups of five.
-5. Say “ħmistax”. Verify the completion response and audible Maltese captions match.
+Select Fractions in Learning corner. Carry out these five recorded turns without reloading:
 
-For every turn record transcription intent correctness, intelligibility, tutor timing, speech preparation timing and total machine response latency. Test microphone denial, an empty/silent recording, network failure, correction of a recognised number, 30-second auto-stop, ending during a request and repeated playback. Retry preserves the lesson step on failure; it does not bill or save a duplicate learning event because this prototype has no billing/persistence.
+1. Ask “Ma fhimtx”. Review the editable transcript, send, and listen to the guided reply.
+2. Say “ħamsa” (5), completing the first unit-fraction step.
+3. Say “ħmistax” (15), completing three quarters of 20.
+4. Say “sitta” (6), finding one third of 18.
+5. Say “tnax” (12), completing two thirds of 18. Verify lesson completion and saved parent progress.
 
-Teacher/native-speaker approval, provider performance, browser/device results and release gates remain unverified. No production launch is authorised by this prototype.
+For every turn record recognition intent, intelligibility, transcript corrections, tutor request timing, speech preparation timing and total machine latency. Exclude the tester’s confirmation time. Then repeat with two wrong answers, English code-switching and natural requests for explanation.
+
+Test permission denial, silence, 30-second auto-stop, interrupted uploads, repeated Send, withdrawal of consent during a pending request and repeated playback. Recognition results always require confirmation. Failed provider requests release reserved family allowance; successful audio generation consumes actual duration. Review charged duration in Family settings.
+
+Real provider performance, iOS Safari/Android Chrome results and teacher/native-speaker approval remain unverified until this review is performed. Follow docs/release-gates.md before involving children.

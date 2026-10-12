@@ -1,19 +1,132 @@
-'use client';
-import { useEffect,useRef,useState } from 'react';
-import { record } from '@/lib/record';
-type Turn={input:string;text:string;step:number;mistakes:number;correct:boolean|null;tutorMs:number;transcriptionMs:number;totalMs:number};
-async function request(path:string,body:unknown,signal:AbortSignal){const r=await fetch('/api/v1/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal});const data=await r.json();if(!r.ok)throw new Error(data.error);return data;}
-export default function Home(){
- const [mode,setMode]=useState('loading'),[started,setStarted]=useState(false),[state,setState]=useState('idle'),[text,setText]=useState(''),[error,setError]=useState(''),[turns,setTurns]=useState<Turn[]>([]),[step,setStep]=useState(0),[mistakes,setMistakes]=useState(0),[transcriptionMs,setTranscriptionMs]=useState(0),[speechMs,setSpeechMs]=useState<number|null>(null);
- const stop=useRef<null|(()=>Promise<Blob>)>(null),abort=useRef<AbortController|null>(null),audio=useRef<HTMLAudioElement|null>(null),url=useRef<string|null>(null),busy=useRef(false),generation=useRef(0);
- useEffect(()=>{fetch('/api/v1/status').then(r=>r.json()).then(d=>setMode(d.mode)).catch(()=>setMode('unavailable'));return()=>{generation.current++;abort.current?.abort();void stop.current?.();audio.current?.pause();if(url.current)URL.revokeObjectURL(url.current);};},[]);
- function controller(){abort.current?.abort();abort.current=new AbortController();return abort.current.signal;}
- function releaseAudio(){audio.current?.pause();if(url.current)URL.revokeObjectURL(url.current);url.current=null;audio.current=null;}
- async function send(){if(busy.current||!text.trim())return;busy.current=true;setError('');setState('thinking');const start=performance.now();try{const result=await request('turn',{text,step,mistakes},controller());setTurns(t=>[...t,{...result,input:text,transcriptionMs,totalMs:Math.round(performance.now()-start)+transcriptionMs}]);setStep(result.step);setMistakes(result.mistakes);setText('');setTranscriptionMs(0);setSpeechMs(null);setState('idle');}catch(e){if((e as Error).name!=='AbortError'){setError((e as Error).message);setState('error');}}finally{busy.current=false;}}
- async function finish(){if(!stop.current)return;const end=stop.current;stop.current=null;setState('uploading');const start=performance.now();try{const blob=await end();const response=await fetch('/api/v1/transcribe',{method:'POST',headers:{'Content-Type':'audio/wav'},body:blob,signal:controller()});const data=await response.json();if(!response.ok)throw new Error(data.error);setText(data.text);setTranscriptionMs(Math.round(performance.now()-start));setState('confirming');}catch(e){if((e as Error).name!=='AbortError'){setError((e as Error).message);setState('error');}}finally{busy.current=false;}}
- async function microphone(){if(stop.current){await finish();return;}if(busy.current)return;busy.current=true;setError('');releaseAudio();const current=generation.current;try{if(!navigator.mediaDevices?.getUserMedia)throw new Error('Microphone needs HTTPS and a supported browser. You can type instead.');const end=await record(()=>void finish());if(current!==generation.current){await end();return;}stop.current=end;setState('recording');}catch(e){setError((e as Error).name==='NotAllowedError'?'Microphone permission was denied. Allow access in browser settings or type below.':(e as Error).message);setState('error');busy.current=false;}}
- async function speak(){if(busy.current||!turns.length)return;busy.current=true;setError('');releaseAudio();setState('speaking');const start=performance.now();try{const r=await fetch('/api/v1/speech',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:turns.at(-1)!.text}),signal:controller()});if(!r.ok)throw new Error((await r.json()).error);url.current=URL.createObjectURL(await r.blob());audio.current=new Audio(url.current);audio.current.onended=()=>{setState('idle');busy.current=false;};audio.current.onerror=()=>{setError('Audio could not play. Press Listen to retry.');setState('error');busy.current=false;};await audio.current.play();setSpeechMs(Math.round(performance.now()-start));}catch(e){if((e as Error).name!=='AbortError'){setError((e as Error).message);setState('error');}busy.current=false;}}
- function reset(){generation.current++;abort.current?.abort();if(stop.current){void stop.current();stop.current=null;}releaseAudio();busy.current=false;setStarted(false);setTurns([]);setStep(0);setMistakes(0);setText('');setError('');setTranscriptionMs(0);setSpeechMs(null);setState('idle');}
- const working=['uploading','thinking','speaking','recording'].includes(state),last=turns.at(-1);
- return <><header><a className="brand" href="/">ħabib<span className="brand-dot">✳</span></a><span className="header-tag">A little practice. A big difference.</span><span className="test-badge">ADULT TEST PROTOTYPE</span></header><main><div className="intro"><span className="eyebrow">YOUR LEARNING CORNER</span><h1>Small steps.<br/><em>Bright minds.</em></h1><p>A friendly way to explore maths, one question at a time.<br/>Let’s work it out together — bil-Malti.</p></div><div className="workspace"><aside><div className="topic-card"><span className="eyebrow">TODAY’S EXPLORATION</span><div className="fraction-art"><div className="pie"><span>¾</span></div><i>✦</i><b>÷</b></div><span className="year">YEAR 5 · MATHEMATICS</span><h2>Il-Frazzjonijiet</h2><p>Discover how small parts<br/>make a whole.</p><div className="chips"><span>Equal groups</span><span>Parts of a whole</span></div><div className="lesson-line"><span>Lesson 01</span><span>~5 min</span></div></div><div className="note"><span>☀</span><p>No rush. Mistakes help us learn.<br/><strong>Try, think, and try again.</strong></p></div><div className="mode">● {mode==='live'?'Live providers':mode==='local'?'Local test mode · voice disabled':'Checking providers…'}</div></aside><section className="tutor-card"><div className="tutor-top"><div className="avatar">✳</div><div><h3>Meet Ħabib</h3><span>Your AI maths tutor · Malti</span></div><span className="online">HERE TO HELP</span></div><div className="conversation" aria-live="polite">{!started?<div className="welcome"><div className="welcome-spark">✳</div><h2>Bongu! Let’s learn together.</h2><p>We’ll explore three quarters of 20.<br/>You can speak or type, and I’ll help one step at a time.</p><button className="primary" onClick={()=>setStarted(true)}>Let’s begin <span>↗</span></button><small>Use a test identity. Please don’t share personal information.</small></div>:<><div className="bubble tutor"><span>ĦABIB</span><p>Ejja nsibu tliet kwarti ta’ 20. L-ewwel naqsmu 20 f’erba’ gruppi ndaqs. Kemm hu 20 ÷ 4?</p></div>{turns.map((t,i)=><div key={i}><div className="bubble you"><span>YOU</span><p>{t.input}</p></div><div className="bubble tutor"><span>ĦABIB {t.correct===true?'· ✓':''}</span><p>{t.text}</p><small>Transcription {t.transcriptionMs} ms · Tutor {t.tutorMs} ms · Turn {t.totalMs} ms</small></div></div>)}{last&&<button className="listen" disabled={working||mode!=='live'} onClick={()=>void speak()}>◖ Listen to Ħabib {speechMs!==null?`· speech ${speechMs} ms · total ${last.totalMs+speechMs} ms`:''}</button>}{state==='speaking'&&<button className="listen" onClick={()=>{releaseAudio();busy.current=false;setState('idle');}}>Stop audio</button>}{step===2&&<p className="complete">✦ Lesson complete — well done for practising!</p>}</>}</div><div className="controls">{error&&<div role="alert" className="error">{error} <button onClick={()=>{setError('');setState('idle');}}>Dismiss</button></div>}{started&&step<2?<><div className="mic-row"><button aria-label={state==='recording'?'Stop recording':'Start recording'} className={'mic '+(state==='recording'?'recording':'')} disabled={mode!=='live'||(working&&state!=='recording')} onClick={()=>void microphone()}>{state==='recording'?'■':'♩'}</button><div><strong>{state==='recording'?'Recording… tap to stop':state==='uploading'?'Qed nisma’…':state==='thinking'?'Qed naħseb…':'Agħfas biex titkellem'}</strong><span>{state==='recording'?'Maximum 30 seconds':'Or type your answer below'}</span></div></div>{state==='confirming'&&<p className="confirm">Check the transcript before sending. You can correct any words or numbers.</p>}<form onSubmit={e=>{e.preventDefault();void send();}}><label className="sr-only" htmlFor="answer">Your question or answer</label><input id="answer" value={text} onChange={e=>setText(e.target.value)} maxLength={500} placeholder="Ikteb hawn… / Type here…" disabled={working}/><button aria-label="Send answer" disabled={working||!text.trim()}>↑</button></form></>:<p className="privacy">♧ Your recordings are processed, never saved. Transcripts stay in this tab.</p>}</div></section></div><div className="footer-line"><span>MADE FOR LITTLE MOMENTS OF UNDERSTANDING</span><button onClick={reset}>End & clear session ↗</button></div><p className="disclaimer">Prototype content awaits teacher and native-speaker review. For supervised adult testing only.</p></main></>;
+import Link from "next/link";
+import { PublicHeader, Footer } from "@/components/ui";
+export default function Home() {
+  return (
+    <>
+      <PublicHeader />
+      <main className="landing">
+        <section className="hero">
+          <div className="hero-copy">
+            <span className="eyebrow">
+              <span className="green-dot" /> A LEARNING COMPANION, BIL-MALTI
+            </span>
+            <h1>
+              Small steps.
+              <br />
+              <em>Bright minds.</em>
+            </h1>
+            <p>
+              Give your child a little more confidence in maths.
+              <br />
+              Ħabib guides them through one idea at a time,
+              <br />
+              in the language that feels like home.
+            </p>
+            <div className="hero-actions">
+              <Link href="/signup" className="button">
+                Start your family’s journey →
+              </Link>
+              <Link href="/pricing" className="text-link">
+                Explore the family plan →
+              </Link>
+            </div>
+            <div className="hero-detail">
+              <span>Years 4–6</span>
+              <span>Malti & English</span>
+              <span>Parent controlled</span>
+            </div>
+          </div>
+          <div className="hero-visual">
+            <div className="visual-star">✦</div>
+            <div className="floating-label">Aha! I understand it now.</div>
+            <div className="lesson-preview">
+              <div className="preview-head">
+                <span className="avatar">✳</span>
+                <div>
+                  <strong>Ħabib</strong>
+                  <small>Your AI maths tutor</small>
+                </div>
+                <span className="online-dot" />
+              </div>
+              <div className="preview-pie">
+                <div className="pie">
+                  <span>¾</span>
+                </div>
+                <b>Il-Frazzjonijiet</b>
+                <small>Year 5 · Let’s work it out together</small>
+              </div>
+              <div className="preview-bubble">
+                Ejja naqsmu 20 f’erba’ gruppi ndaqs.
+                <br />
+                <strong>Kemm hu 20 ÷ 4?</strong>
+              </div>
+              <div className="preview-input">
+                <span>One small question at a time</span>
+                <i>↑</i>
+              </div>
+            </div>
+            <div className="floating-result">
+              <span>✓</span>Understanding comes first.
+            </div>
+            <div className="visual-dot">÷</div>
+          </div>
+        </section>
+        <section id="how" className="how-section">
+          <div className="section-title">
+            <span className="eyebrow">A LITTLE PRACTICE, A BIG DIFFERENCE</span>
+            <h2>Learning that feels a little lighter.</h2>
+            <p>
+              Space to ask questions. Time to make mistakes. Help to try again.
+            </p>
+          </div>
+          <div className="feature-grid">
+            {[
+              [
+                "01",
+                "A familiar voice",
+                "Speak or type in Maltese or English. Read along with clear captions and replay each explanation.",
+                "♩",
+              ],
+              [
+                "02",
+                "Understanding, step by step",
+                "Short questions and helpful hints encourage your child to work things out, rather than copy an answer.",
+                "✳",
+              ],
+              [
+                "03",
+                "You stay in the picture",
+                "Choose profiles, manage authorisation, and see learning progress from your family dashboard.",
+                "⌂",
+              ],
+            ].map(([n, t, d, icon]) => (
+              <article key={n}>
+                <span className="feature-icon">{icon}</span>
+                <span className="feature-number">{n}</span>
+                <h3>{t}</h3>
+                <p>{d}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+        <section className="family-callout">
+          <div>
+            <span className="eyebrow">FOR YOUR LITTLE LEARNERS</span>
+            <h2>A calm corner for curious minds.</h2>
+            <p>
+              One family account. Two child profiles. Maths in their own time.
+            </p>
+          </div>
+          <Link href="/signup" className="button">
+            Create a parent account →
+          </Link>
+        </section>
+        <p className="launch-note">
+          Early access. Voice requires configured speech services; lessons
+          require teacher review before use with real children.
+        </p>
+      </main>
+      <Footer />
+    </>
+  );
 }

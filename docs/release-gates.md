@@ -1,0 +1,15 @@
+# Release gates — outstanding external validation
+
+The local test suite does not make this service ready for children or paying parents. The specification's complete MVP acceptance requires these measured results and approvals:
+
+- Teacher approval and official learning-outcome mapping for each Year 4–6 lesson. At least 100 independently checked problems per year; the initial packs contain 55 steps and are a starting set, not a complete school curriculum.
+- Native-speaker approval of Maltese text and speech. Five live natural Maltese turns, then a held-out evaluation including numbers, fractions, code-switching, noise and approved child-speech samples. Target 95% intent recognition/confirmation and 95% understandable speech.
+- Pedagogy evaluation: at least 90% one-step/one-question turns. Mathematical test target at least 99% on independently reviewed supported exercises. Free-form speech often requires editing into a short numeric answer; evaluate this usability constraint in the pilot.
+- Live latency and cost measurement, with defined connection and devices. Target P95 under 8 seconds, excluding human confirmation time. Test supported iOS Safari and Android Chrome versions, microphone denial, interrupted recording, playback restrictions and network loss.
+- Supabase staging: verified email signup, email delivery, recovery, expired sessions, cross-family API/RLS denial, consent withdrawal during pending provider requests and account erasure including authentication identity.
+- Stripe sandbox: initial payment, repeated checkout, duplicate/out-of-order webhooks, recurring renewal, failed payment, recovery, cancellation, refunds and account erasure. Local signature/idempotency tests do not replace Stripe sandbox validation.
+- Security/privacy review: effective parental authorisation, approved legal bases, final operator/legal notices, DPIA, vendor processing arrangements and transfer assessment, provider retention, backup expiry, export/erasure and independent penetration testing. There must be no open P0/P1 issues at launch.
+- Safeguarding: independently reviewed procedure and held-out tests for concerning disclosures in Maltese/English and prompt injection. The basic keyword redirect is a fallback, not a validated safeguarding classifier. No automated external contact occurs.
+- Operational readiness: monitored spend/latency, bounded abuse, database backups, tested restoration, alert delivery, incident response, rollback and immediate provider-disable controls. Set `HABIB_SPEECH_ENABLED=false` to disable voice; set `HABIB_AI_ENABLED=false` to disable conversational AI. Set `HABIB_HOMEWORK_ENABLED=false` to disable image extraction. Restart services after changing flags.
+
+Complete internal, teacher and family pilots in that order. Do not present unmeasured gates as passed. Development uses fictional identities; real children require the approved pilot procedure and parent authorisation.
