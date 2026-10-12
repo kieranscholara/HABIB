@@ -11,7 +11,9 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import {
   applyUpdate,
   validateArchiveListing,
@@ -77,6 +79,34 @@ async function fixture() {
 }
 
 describe("downloaded-copy updater", () => {
+  it.each(["file", "directory"])(
+    "runs the CLI through a %s symlink, including macOS /tmp aliases",
+    async (kind) => {
+      const root = await mkdtemp(join(tmpdir(), "habib-updater-entry-test-"));
+      temporary.push(root);
+      const script = fileURLToPath(
+        new URL("../scripts/update-local.mjs", import.meta.url),
+      );
+      let entry;
+      if (kind === "file") {
+        entry = join(root, "habib-update.mjs");
+        await symlink(script, entry, "file");
+      } else {
+        await symlink(dirname(script), join(root, "tmp-alias"), "dir");
+        entry = join(root, "tmp-alias/update-local.mjs");
+      }
+      // An invalid argument must report an error. Before the fix, Node exited
+      // successfully with no output without ever reaching the updater CLI.
+      const result = spawnSync(process.execPath, [entry, "--invalid-option"], {
+        encoding: "utf8",
+        cwd: root,
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("Update stopped: Usage:");
+    },
+  );
+
   it("updates a folder with spaces and preserves settings/data, with a protected complete code backup", async () => {
     const { target, source } = await fixture();
     const install = vi.fn(async (path: string) => {

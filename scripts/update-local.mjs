@@ -397,10 +397,15 @@ async function main() {
     );
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
-) {
+// Node resolves the module URL through symlinks, but argv retains the supplied
+// path. On macOS /tmp points to /private/tmp; compare canonical paths so the
+// downloaded updater runs instead of silently being treated as an import.
+const entryPath = process.argv[1]
+  ? await realpath(resolve(process.argv[1])).catch(() =>
+      resolve(process.argv[1]),
+    )
+  : null;
+if (entryPath && import.meta.url === pathToFileURL(entryPath).href) {
   main().catch((error) => {
     console.error(`Update stopped: ${error.message}`);
     process.exitCode = 1;
