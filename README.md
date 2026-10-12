@@ -20,7 +20,17 @@ Local data is stored in the ignored `.habib/development.sqlite` database. Local 
 
 ## Update an existing downloaded copy
 
-Stop the old app with Control+C. Download and extract the newest ZIP into a new folder. In Finder, use Command+Shift+. to show hidden files, then copy your existing `.env.local` and the entire `.habib` folder into the new folder. Keep the old folder as a backup. Open Terminal in the new folder, run `npm ci`, then `npm run dev`. This update requires no database migration for local profiles/progress. The Terminal startup identifies this release as `habib-ai@0.3.0`. Start a fresh lesson instead of reusing an old session URL.
+Stop the old app with **Control+C**, then paste this into the same Terminal window:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kieranscholara/HABIB/main/scripts/update-local.mjs -o /tmp/habib-update.mjs && node /tmp/habib-update.mjs --start
+```
+
+The updater downloads the latest GitHub release, verifies a local backup, replaces the app code, runs `npm ci`, clears the previous build and launches the app. Your `.env.local`, other private environment files, `.habib` database and Git metadata stay in place. Backups sit next to the original folder with a `-backup-` suffix; they include your previous code, settings and saved data, so keep them private. Custom edits to app code are saved in that backup. If installation fails, the previous code is restored; run `npm ci` before restarting it because dependencies may have changed. Node.js 24 LTS, `curl` and `unzip` are required (the latter two are included with macOS). Start a fresh lesson instead of reusing an old session URL.
+
+Run from your existing HABIB folder. If run elsewhere, the updater looks in Downloads and lets you choose when several copies exist. You can also specify `--directory "/Users/yourname/Downloads/HABIB-main 2"`. Future updates can use `npm run update:local` after stopping the app. `node scripts/update-local.mjs --check` verifies the GitHub download without changing your app.
+
+If the repository is private and downloading fails, use GitHub **Code → Download ZIP** while signed in, then run `node /tmp/habib-update.mjs --archive "/path/to/HABIB-main.zip" --start` in your existing app folder. For a fully manual update, extract the new ZIP separately and copy your `.env.local` and entire `.habib` folder into it before `npm ci` and `npm run dev`. This release requires no database migration for local profiles/progress.
 
 ## Add speech and homework
 
