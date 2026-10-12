@@ -5,6 +5,7 @@ import { bounded, body, json, AppError } from "./http";
 import { transaction } from "./data/db";
 import { ownedSession, reserveVoice } from "./family";
 import { providerFetch, azure } from "./server";
+import { speechMarkup } from "./speech";
 const cache = new Map<
   string,
   { at: number; response: Uint8Array | string; type: string }
@@ -18,18 +19,6 @@ function save(key: string, response: Uint8Array | string, type: string) {
   if (cache.size >= 100) cache.delete(cache.keys().next().value!);
   cache.set(key, { at: Date.now(), response, type });
 }
-const escape = (s: string) =>
-  s.replace(
-    /[<>&"']/g,
-    (c) =>
-      ({
-        "<": "&lt;",
-        ">": "&gt;",
-        "&": "&amp;",
-        '"': "&quot;",
-        "'": "&apos;",
-      })[c]!,
-  );
 async function settle(parentId: string, id: string, success: boolean) {
   await transaction((db) =>
     db.run(
@@ -188,7 +177,7 @@ export async function speechRequest(
           "Content-Type": "application/ssml+xml",
           "X-Microsoft-OutputFormat": "riff-16khz-16bit-mono-pcm",
         },
-        body: `<speak version="1.0" xml:lang="${child.language === "mt" ? "mt-MT" : "en-GB"}"><voice name="${child.language === "mt" ? "mt-MT-GraceNeural" : "en-GB-SoniaNeural"}">${escape(text)}</voice></speak>`,
+        body: speechMarkup(text, child.language),
       },
     );
     const audio = new Uint8Array(await response.arrayBuffer());

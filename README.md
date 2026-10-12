@@ -26,6 +26,19 @@ Copy `.env.example` to `.env.local`. Set your Azure Speech key and its actual re
 
 Mathematical answers and lesson progression are controlled by the application, never by client-held state or unverified generated prose. The AI selects hints/repeat/redirect actions; captions come from the lesson material. Provider failures fall back to verified text guidance. Speech failures release family allowance; uncertain reservations after a crash are conservatively charged at their reserved bound to prevent overspending.
 
+## Voice delivery
+
+Speech now spells out small Maltese numbers, decimal digits, percentages and arithmetic symbols, with a gentle default pace (5% slower) and 180 ms pauses between sentences. Captions retain the original maths notation. Larger whole numbers remain numeric for Azure to pronounce; Maltese phrasing still requires native-speaker review.
+
+Optional settings in `.env.local`:
+
+```dotenv
+HABIB_MALTESE_VOICE=mt-MT-GraceNeural
+HABIB_SPEECH_RATE_PERCENT=-5
+```
+
+Use `mt-MT-JosephNeural` to compare the other supported Maltese voice. Rate is bounded from -15 to +5 percent. Restart after changes. Pitch stays at the voice’s default; no expressive style or voice cloning is assumed. These changes format speech; they do not train Azure’s model. Listen to the same sentences with a native speaker to judge quality.
+
 ## Validate
 
 ```bash

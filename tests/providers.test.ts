@@ -167,3 +167,17 @@ it("synthesises only a saved tutor caption, not arbitrary browser text", async (
   });
   expect(fetchProvider).not.toHaveBeenCalled();
 });
+it("uses formatted speech while retaining the original lesson caption", async () => {
+  fetchProvider.mockResolvedValue(new Response(wav()));
+  const req = new NextRequest("http://localhost:3000", {
+    method: "POST",
+    body: JSON.stringify({ requestId: randomUUID(), turnId: null }),
+  });
+  const response = await speechRequest(req, parentId, sessionId);
+  expect(response.status).toBe(200);
+  const options = fetchProvider.mock.calls[0][1];
+  expect(options.body).toContain('rate="-5%"');
+  expect(options.body).toContain("għoxrin maqsum b’erbgħa");
+  expect(options.body).not.toContain("20 ÷ 4");
+  expect(response.headers.get("Content-Type")).toBe("audio/wav");
+});
