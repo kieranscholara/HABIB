@@ -15,10 +15,14 @@ export function azure() {
     );
   return { key, region };
 }
-export async function providerFetch(url: string, init: RequestInit) {
+export async function providerFetch(
+  url: string,
+  init: RequestInit,
+  timeoutMs = 15000,
+) {
   const result = await fetch(url, {
     ...init,
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(timeoutMs),
     cache: "no-store",
   });
   if (!result.ok)

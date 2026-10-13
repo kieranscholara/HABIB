@@ -14,7 +14,7 @@ export default function Page() {
           </h1>
           <p>
             One family account, two little learners, and a calmer way to
-            practise maths.
+            practise school subjects.
           </p>
         </div>
         <section className="pricing-card">
@@ -25,8 +25,8 @@ export default function Page() {
           </h2>
           <p>Two child profiles · Years 4–6</p>
           <ul>
-            <li>Guided mathematics in Maltese and English</li>
-            <li>Short lessons, hints, and practice</li>
+            <li>Maths, English, Maltese and Science practice</li>
+            <li>Worked explanations, follow-up chat and practice</li>
             <li>
               {process.env.HABIB_MONTHLY_VOICE_MINUTES || "120"} metered voice
               minutes per month

@@ -28,6 +28,119 @@ async function kid(request: APIRequestContext, name = "Test learner") {
   });
   return id;
 }
+test("legacy maths authorisation stays valid and other subjects need the parent's explicit extension", async ({
+  request,
+}) => {
+  await signup(request);
+  const childId = await kid(request);
+  const start = (topicId: string) =>
+    request.post("/api/v1/sessions", {
+      headers: origin,
+      data: { childId, topicId },
+    });
+  expect((await start("Y5-ENGLISH-GRAMMAR")).status()).toBe(403);
+  expect((await start("Y5-FRACTIONS")).status()).toBe(201);
+  await request.post(`/api/v1/children/${childId}/consent`, {
+    headers: origin,
+    data: { authorised: true, policyVersion: "1.1" },
+  });
+  for (const topicId of [
+    "Y5-ENGLISH-GRAMMAR",
+    "Y5-MALTESE-LANGUAGE",
+    "Y5-SCIENCE-MATERIALS",
+  ]) {
+    const response = await start(topicId);
+    expect(response.status()).toBe(201);
+    const session = (await response.json()).id;
+    const lesson = await (
+      await request.get(`/api/v1/sessions/${session}`)
+    ).json();
+    expect(lesson.choices.length).toBeGreaterThan(1);
+    const answer = topicId.includes("ENGLISH")
+      ? "walked"
+      : topicId.includes("MALTESE")
+        ? "jaqra"
+        : "solidu";
+    const result = await request.post(`/api/v1/sessions/${session}/turns`, {
+      headers: origin,
+      data: { clientTurnId: randomUUID(), text: answer, conversation: true },
+    });
+    expect((await result.json()).correct).toBe(true);
+  }
+});
+test("subject selection, checked word answers and a specific worked explanation work on mobile", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 1000 });
+  await signup(page.request);
+  const childId = await kid(page.request);
+  await page.request.post(`/api/v1/children/${childId}/consent`, {
+    headers: origin,
+    data: { authorised: true, policyVersion: "1.1" },
+  });
+  await page.goto("/learn");
+  await page.getByLabel("Subject", { exact: true }).selectOption("science");
+  await page
+    .getByRole("button", { name: "Start Solids, liquids and gases" })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "solidu", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".topic-card .year")).toContainText("Ix-Xjenza");
+  await page
+    .getByRole("textbox", { name: "Your answer or question" })
+    .fill("spjega");
+  await page.getByRole("button", { name: "Send answer" }).click();
+  await expect(page.locator(".bubble.tutor").last()).toContainText("Solidu");
+  await expect(page.locator(".bubble.tutor").last()).toContainText("likwidu");
+  await page.getByRole("button", { name: "solidu", exact: true }).click();
+  await expect(page.locator(".bubble.tutor").last()).toContainText("tajjeb");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+test("full tutoring history above the old body limit remains usable", async ({
+  request,
+}) => {
+  await signup(request);
+  const childId = await kid(request);
+  const session = (
+    await (
+      await request.post("/api/v1/sessions", {
+        headers: origin,
+        data: { childId, topicId: "Y5-FRACTIONS" },
+      })
+    ).json()
+  ).id;
+  const confirmed = await request.post(
+    `/api/v1/sessions/${session}/homework/confirm`,
+    {
+      headers: origin,
+      data: { kind: "fraction_of", a: 20, b: 4, c: 3, operator: "+" },
+    },
+  );
+  expect(confirmed.status()).toBe(200);
+  const result = await request.post(`/api/v1/sessions/${session}/turns`, {
+    headers: origin,
+    data: {
+      clientTurnId: randomUUID(),
+      text: "Show the full working",
+      conversation: true,
+      history: Array.from({ length: 8 }, () => ({
+        role: "assistant",
+        text: "A full earlier explanation. ".repeat(120),
+      })),
+    },
+  });
+  expect(result.status()).toBe(200);
+  const reply = await result.json();
+  expect(reply.text.length).toBeGreaterThan(420);
+  expect(reply.text).toContain("20 ÷ 4 = 5");
+  expect(reply.text).toContain("5 × 3 = 15");
+  expect(reply.step).toBe(0);
+});
 for (const width of [390, 1280])
   test(`family journey at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
@@ -49,7 +162,7 @@ for (const width of [390, 1280])
     await page.getByLabel("Nickname").fill("Lila");
     await page.getByRole("button", { name: "Save profile" }).click();
     await page
-      .getByRole("button", { name: "I authorise maths tutoring" })
+      .getByRole("button", { name: "I authorise school tutoring" })
       .click();
     await expect(
       page.getByText("Authorised to learn", { exact: true }),
@@ -539,9 +652,15 @@ test("voice speech automatically interrupts playback and preserves the new utter
       },
     });
   });
-  await page.route("**/api/v1/sessions/*/speech", (route) =>
-    route.fulfill({ contentType: "audio/wav", body: silentWav(5) }),
-  );
+  const requested: { turnId: string; part: number }[] = [];
+  await page.route("**/api/v1/sessions/*/speech", (route) => {
+    requested.push(route.request().postDataJSON());
+    return route.fulfill({
+      contentType: "audio/wav",
+      headers: { "X-Speech-Parts": "3" },
+      body: silentWav(5),
+    });
+  });
   await page.goto("/tutor?session=" + session);
   await page.getByRole("button", { name: "Start voice conversation" }).click();
   await expect(
@@ -580,6 +699,13 @@ test("voice speech automatically interrupts playback and preserves the new utter
   await expect(page.locator(".bubble.you")).toHaveCount(2, {
     timeout: 15000,
   });
+  // The interrupted reply's later parts must not resume over the new turn.
+  const firstTurn = requested[0].turnId;
+  expect(
+    requested
+      .filter((part) => part.turnId === firstTurn)
+      .map((part) => part.part),
+  ).toEqual([0, 1]);
   await page
     .getByRole("button", { name: "Stop conversation", exact: true })
     .click();
@@ -595,6 +721,65 @@ test("voice speech automatically interrupts playback and preserves the new utter
   const before = recognised;
   await page.waitForTimeout(300);
   expect(recognised).toBe(before);
+});
+test("long spoken replies play every part and do not time out after eight seconds of playback", async ({
+  page,
+}) => {
+  await fakeMicrophone(page, true);
+  await page.addInitScript(() => {
+    const play = HTMLMediaElement.prototype.play;
+    (window as unknown as { testPartsPlayed: number }).testPartsPlayed = 0;
+    HTMLMediaElement.prototype.play = async function () {
+      await play.call(this);
+      if (this.duration >= 2)
+        (window as unknown as { testPartsPlayed: number }).testPartsPlayed++;
+    };
+  });
+  const session = await startTestLesson(page);
+  let recognised = 0;
+  await page.route("**/api/v1/sessions/*/transcribe", (route) => {
+    recognised++;
+    return route.fulfill({ json: { text: "ma fhimtx", confidence: 0.95 } });
+  });
+  const requested: number[] = [];
+  await page.route("**/api/v1/sessions/*/speech", (route) => {
+    requested.push(route.request().postDataJSON().part);
+    return route.fulfill({
+      contentType: "audio/wav",
+      headers: { "X-Speech-Parts": "3" },
+      body: silentWav(3),
+    });
+  });
+  await page.goto("/tutor?session=" + session);
+  await page.getByRole("button", { name: "Start voice conversation" }).click();
+  await expect(
+    page.getByText("Listening… pause when you finish", { exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() =>
+    (window as unknown as { testSpeak: () => void }).testSpeak(),
+  );
+  await expect(page.locator(".bubble.you")).toHaveCount(1);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            (window as unknown as { testPartsPlayed: number }).testPartsPlayed,
+        ),
+      { timeout: 15000 },
+    )
+    .toBe(3);
+  await expect(
+    page.getByText("Speaking — you can interrupt.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Listening… pause when you finish", { exact: true }),
+  ).toBeVisible({ timeout: 6000 });
+  expect(requested).toEqual([0, 1, 2]);
+  expect(recognised).toBe(1);
+  await page
+    .getByRole("button", { name: "Stop conversation", exact: true })
+    .click();
 });
 test("uncertain voice waits for transcript correction before submitting", async ({
   page,

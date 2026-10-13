@@ -5,7 +5,7 @@ export default function Page() {
       <PublicHeader />
       <main className="legal-page">
         <span className="eyebrow">
-          PRIVACY NOTICE · VERSION 1.0 · PRE-LAUNCH DRAFT
+          PRIVACY NOTICE · VERSION 1.1 · PRE-LAUNCH DRAFT
         </span>
         <h1>Your family’s data deserves care.</h1>
         <p>
@@ -18,25 +18,27 @@ export default function Page() {
         <p>
           Parents create accounts and profiles using nicknames, school year and
           language. The application requires recorded parent authorisation
-          before tutoring. Child profiles do not have independent accounts.
-          Parents can withdraw authorisation in My children, immediately ending
-          active lessons.
+          before tutoring in Maths, English, Maltese and Science. Earlier
+          maths-only authorisation remains limited to maths until a parent
+          extends it. Child profiles do not have independent accounts. Parents
+          can withdraw authorisation in My children, immediately ending active
+          lessons.
         </p>
         <h2>What is processed</h2>
         <p>
           Speech recordings are sent to Azure for recognition, then discarded by
-          the app. Short generated audio and recognition results may be held in
+          the app. Generated audio parts and recognition results may be held in
           server memory for up to one minute for safe retries. When enabled,
           short tutoring questions, up to eight recent dialogue messages and
           previous tutor explanations from the current lesson are sent to OpenAI
-          for contextual maths explanations that avoid repetition. Child
-          dialogue context is kept in the current browser tab. In voice
-          conversation, the microphone stays active while the tutor speaks so
-          you can interrupt; only your captured turn is sent for recognition.
-          Camera previews stay on your device until you capture a photo.
-          Homework photos are sent to OpenAI for extraction and are not written
-          to storage. Avoid faces, names or personal information in photos.
-          Provider retention and processing contracts must be reviewed
+          for contextual explanations of the selected school subject that avoid
+          repetition. Child dialogue context is kept in the current browser tab.
+          In voice conversation, the microphone stays active while the tutor
+          speaks so you can interrupt; only your captured turn is sent for
+          recognition. Camera previews stay on your device until you capture a
+          photo. Homework photos are sent to OpenAI for extraction and are not
+          written to storage. Avoid faces, names or personal information in
+          photos. Provider retention and processing contracts must be reviewed
           separately.
         </p>
         <h2>What is saved</h2>

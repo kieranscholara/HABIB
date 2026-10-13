@@ -3,7 +3,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Ħabib — Small steps. Bright minds.",
     short_name: "Ħabib",
-    description: "Maltese and English mathematics for your family",
+    description: "Maths, English, Maltese and Science practice for your family",
     start_url: "/",
     display: "standalone",
     background_color: "#f8f7f2",

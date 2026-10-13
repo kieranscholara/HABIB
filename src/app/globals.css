@@ -1252,6 +1252,7 @@ button {
   color: #a18c70;
 }
 .learning-toolbar {
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1523,6 +1524,7 @@ button {
   color: #92a67c;
 }
 .bubble p {
+  white-space: pre-wrap;
   font-size: 13px;
   line-height: 1.85;
   margin: 8px 0 0;
@@ -2204,6 +2206,18 @@ button {
   margin-bottom: 0.5rem;
   font-size: 0.75rem;
   color: #667361;
+}
+.answer-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.curriculum-note {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #667361;
+  margin-block: 1rem;
 }
 .camera-capture video {
   width: 100%;

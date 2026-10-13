@@ -7,9 +7,18 @@ import {
 } from "../src/lib/curriculum";
 import { homeworkTopic, homeworkSchema } from "../src/lib/homework";
 describe("mathematical correctness", () => {
-  it("provides six topics for each supported school year", () => {
+  it("preserves six maths topics and adds every supported subject in each year", () => {
     for (const year of [4, 5, 6])
-      expect(curriculum.filter((t) => t.year === year)).toHaveLength(6);
+      expect(
+        curriculum.filter((t) => t.year === year && t.subject === "maths"),
+      ).toHaveLength(6);
+    for (const year of [4, 5, 6])
+      for (const subject of ["english", "maltese", "science"])
+        expect(
+          curriculum.some(
+            (topic) => topic.year === year && topic.subject === subject,
+          ),
+        ).toBe(true);
   });
   it("handles exact fractions, decimals and Maltese answers", () => {
     expect(numericAnswer("ħmistax")).toBe(15);

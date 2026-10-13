@@ -27,7 +27,10 @@ export function HomeworkStart({ childId = "" }: { childId?: string }) {
     setError("");
     try {
       const kid = kids.find((k) => k.id === selected),
-        topic = topics.find((t) => t.year === kid?.school_year);
+        topic = topics.find(
+          (t) =>
+            t.year === kid?.school_year && (t.subject || "maths") === "maths",
+        );
       if (!topic)
         throw new Error(
           "A reviewed lesson for this school year is required first.",

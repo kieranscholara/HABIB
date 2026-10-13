@@ -45,16 +45,16 @@ export default function Page() {
       setBusy(false);
     }
   }
-  async function authorise(kid: Kid) {
+  async function authorise(kid: Kid, upgrade = false) {
     setBusy(true);
     setError("");
     try {
-      if (kid.consented)
+      if (kid.consented && !upgrade)
         await api(`children/${kid.id}/consent`, { method: "DELETE" });
       else
         await post(`children/${kid.id}/consent`, {
           authorised: true,
-          policyVersion: "1.0",
+          policyVersion: "1.1",
         });
       await refresh();
     } catch (e) {
@@ -159,8 +159,10 @@ export default function Page() {
               <h4>Parent authorisation</h4>
               <p>
                 {kid.consented
-                  ? "You have authorised mathematics tutoring. Withdrawing it immediately ends active lessons."
-                  : "By authorising, you confirm you are the parent or legal guardian and allow this profile to use maths tutoring under privacy notice v1.0."}
+                  ? kid.school_consented
+                    ? "You have authorised Maths, English, Maltese and Science tutoring. Withdrawing it immediately ends active lessons."
+                    : "This profile has maths-only authorisation. You can also authorise the other school subjects below."
+                  : "By authorising, you confirm you are the parent or legal guardian and allow Maths, English, Maltese and Science tutoring under privacy notice v1.1."}
               </p>
               <button
                 className="button secondary full"
@@ -169,8 +171,17 @@ export default function Page() {
               >
                 {kid.consented
                   ? "Withdraw authorisation"
-                  : "I authorise maths tutoring"}
+                  : "I authorise school tutoring"}
               </button>
+              {!!kid.consented && !kid.school_consented && (
+                <button
+                  className="button full"
+                  disabled={busy}
+                  onClick={() => void authorise(kid, true)}
+                >
+                  Authorise other subjects
+                </button>
+              )}
             </div>
             <div className="profile-actions">
               <button

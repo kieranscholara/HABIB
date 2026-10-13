@@ -205,6 +205,8 @@ export function homeworkTopic(base: Topic, value: unknown): Topic {
     ];
   return {
     ...base,
+    subject: "maths",
+    homework: true,
     title: { en: "Homework helper", mt: "Għajnuna fix-Xogħol tad-Dar" },
     description: homeworkLabel(input),
     exercises,

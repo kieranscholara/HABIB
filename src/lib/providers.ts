@@ -8,6 +8,7 @@ import { providerFetch, azure } from "./server";
 import { homeworkSchema, homeworkKinds, homeworkLabel } from "./homework";
 import { rate } from "./auth";
 import { speechMarkup } from "./speech";
+import { speechParts } from "./speech-parts";
 const cache = new Map<
   string,
   { at: number; response: Uint8Array | string; type: string }
@@ -136,6 +137,7 @@ export async function speechRequest(
       .object({
         requestId: z.string().uuid(),
         turnId: z.string().uuid().nullable(),
+        part: z.number().int().min(0).max(49).default(0),
       })
       .strict(),
   );
@@ -159,11 +161,22 @@ export async function speechRequest(
       );
     text = JSON.parse(rows[0].response_json).text;
   }
-  const key = parentId + ":" + input.requestId;
+  const parts = speechParts(text);
+  if (input.part >= parts.length)
+    throw new AppError(
+      "SPEECH_PART_INVALID",
+      "This part of the reply is unavailable.",
+    );
+  const headers = {
+    "Content-Type": "audio/wav",
+    "Cache-Control": "no-store",
+    "X-Speech-Parts": String(parts.length),
+  };
+  const key = `${parentId}:${sessionId}:${input.turnId ?? "opening"}:${input.part}:${input.requestId}`;
   const prior = cached(key);
   if (prior)
     return new Response(new Uint8Array(prior.response as Uint8Array).buffer, {
-      headers: { "Content-Type": prior.type, "Cache-Control": "no-store" },
+      headers,
     });
   // Reserve 30 seconds and enforce that upper bound with provider audio duration.
   await transaction((db) =>
@@ -179,7 +192,7 @@ export async function speechRequest(
           "Content-Type": "application/ssml+xml",
           "X-Microsoft-OutputFormat": "riff-16khz-16bit-mono-pcm",
         },
-        body: speechMarkup(text, child.language),
+        body: speechMarkup(parts[input.part], child.language),
       },
     );
     const audio = new Uint8Array(await response.arrayBuffer());
@@ -202,7 +215,7 @@ export async function speechRequest(
     });
     save(key, audio, "audio/wav");
     return new Response(audio, {
-      headers: { "Content-Type": "audio/wav", "Cache-Control": "no-store" },
+      headers,
     });
   } catch (e) {
     await settle(parentId, input.requestId, false);

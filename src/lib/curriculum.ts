@@ -1,9 +1,15 @@
 export type Language = "mt" | "en";
+import type { Subject } from "./subjects";
+import { nationalCurriculum } from "./subjects";
+import { subjectLessons } from "./subject-lessons";
+import { needsSimplerExplanation } from "./explanation";
 export interface Exercise {
   prompt: Record<Language, string>;
   hint: Record<Language, string>;
   worked: Record<Language, string>;
-  answer: number;
+  answer: number | string;
+  acceptedAnswers?: string[];
+  choices?: Record<Language, string[]>;
 }
 export interface Topic {
   id: string;
@@ -12,6 +18,8 @@ export interface Topic {
   icon: string;
   description: string;
   exercises: Exercise[];
+  subject?: Subject;
+  homework?: boolean;
 }
 const exercise = (
   en: string,
@@ -90,6 +98,7 @@ function add(
 ) {
   topics.push({
     year,
+    subject: "maths",
     id: `Y${year}-${id}`,
     title: { en, mt },
     icon,
@@ -462,7 +471,7 @@ add(
     ),
   ],
 );
-export const curriculum = topics;
+export const curriculum = [...topics, ...subjectLessons];
 export function topicById(id: string) {
   return curriculum.find((t) => t.id === id);
 }
@@ -475,6 +484,8 @@ export function publicTopic(topic: Topic, approved: boolean) {
     description: topic.description,
     steps: topic.exercises.length,
     approved,
+    subject: topic.subject || "maths",
+    curriculum: nationalCurriculum,
   };
 }
 const words: Record<string, number> = {
@@ -612,7 +623,34 @@ export function teaching(
       type: "redirect",
       safetyState: "escalate",
     };
-  const value = numericAnswer(input);
+  const textAnswer = (text: string) =>
+    text
+      .toLocaleLowerCase()
+      .normalize("NFKC")
+      .trim()
+      .replace(/[.!?]$/, "")
+      .replace(/^(?:it is|the answer is|hu|hija|it-tweġiba hija)\s+/, "");
+  const isText = typeof exercise.answer === "string";
+  const matchesText =
+    isText &&
+    [exercise.answer as string, ...(exercise.acceptedAnswers || [])].some(
+      (answer) => textAnswer(answer) === textAnswer(input),
+    );
+  const asking =
+    needsSimplerExplanation(input) ||
+    /[?]|\b(?:why|how|explain|help|understand|solve|show|confused|please)\b|spjega|għinni|għaliex|kif/i.test(
+      input,
+    );
+  const value = isText
+    ? matchesText
+      ? 1
+      : !asking &&
+          Object.values(exercise.choices || {})
+            .flat()
+            .some((choice) => textAnswer(choice) === textAnswer(input))
+        ? 0
+        : null
+    : numericAnswer(input);
   if (value === null)
     return {
       text: exercise.hint[lang] + " " + exercise.prompt[lang],
@@ -622,7 +660,7 @@ export function teaching(
       type: "give_hint",
       safetyState: "normal",
     };
-  if (equivalent(value, exercise.answer)) {
+  if (isText ? matchesText : equivalent(value, exercise.answer as number)) {
     const next = topic.exercises[step + 1];
     return {
       text:

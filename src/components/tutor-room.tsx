@@ -5,10 +5,13 @@ import Link from "next/link";
 import { api, post, type PublicTopic } from "@/lib/client";
 import { record } from "@/lib/record";
 import { preparePhoto } from "@/lib/photo";
+import { playSpeechQueue } from "@/lib/speech-parts";
+import { subjects } from "@/lib/subjects";
 import type { Homework } from "@/lib/homework";
 import { HomeworkScan, type ScannedQuestion } from "./homework-scan";
 import { Shell, ErrorNote, ProgressBar } from "./ui";
 interface Turn {
+  choices?: string[];
   id: string;
   text: string;
   correct: boolean | null;
@@ -22,6 +25,7 @@ interface Turn {
   totalMs?: number;
 }
 interface Lesson {
+  choices?: string[];
   session: { step: number; status: string };
   child: { nickname: string; language: "mt" | "en" };
   topic: PublicTopic;
@@ -56,10 +60,17 @@ export function TutorRoom({
     generation = useRef(0),
     voice = useRef(false),
     playing = useRef(false),
+    playback = useRef(0),
     turnRef = useRef<Turn[]>([]),
     lessonRef = useRef<Lesson | null>(null),
     pending = useRef<{ id: string; text: string } | null>(null),
-    lastAudio = useRef<{ turnId: string | null; blob: Blob } | null>(null),
+    lastAudio = useRef<{
+      turnId: string | null;
+      parts: Map<number, Blob>;
+      requests: Map<number, string>;
+      total: number;
+    } | null>(null),
+    audioDone = useRef<(() => void) | null>(null),
     conversation = useRef<HTMLDivElement | null>(null),
     actions = useRef({ finish: async () => {}, pause: () => {} });
   function updateTurns(values: Turn[]) {
@@ -73,7 +84,10 @@ export function TutorRoom({
     updateTurns(data.turns);
   }
   function clearAudio() {
+    playback.current++;
     playing.current = false;
+    audioDone.current?.();
+    audioDone.current = null;
     if (audio.current) {
       audio.current.onended = null;
       audio.current.onerror = null;
@@ -166,7 +180,7 @@ export function TutorRoom({
         { role: "assistant", text: t.text },
       ])
       .slice(-8)
-      .map((h) => ({ ...h, text: h.text.slice(0, 500) }));
+      .map((h) => ({ ...h, text: h.text.slice(0, 4000) }));
     try {
       const reply = await api<Turn>(`sessions/${sessionId}/turns`, {
         method: "POST",
@@ -304,45 +318,49 @@ export function TutorRoom({
     setState("speaking");
     setError("");
     const current = generation.current,
-      start = performance.now();
+      start = performance.now(),
+      signal = controller();
+    const playbackId = playback.current;
+    const cached =
+      lastAudio.current?.turnId === turnId
+        ? lastAudio.current
+        : {
+            turnId,
+            parts: new Map<number, Blob>(),
+            requests: new Map<number, string>(),
+            total: 1,
+          };
+    lastAudio.current = cached;
+    async function loadPart(part: number) {
+      const saved = cached.parts.get(part);
+      if (saved) return saved;
+      if (!cached.requests.has(part))
+        cached.requests.set(part, crypto.randomUUID());
+      const response = await fetch(`/api/v1/sessions/${sessionId}/speech`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: cached.requests.get(part),
+          turnId,
+          part,
+        }),
+        signal,
+      });
+      if (!response.ok) throw new Error((await response.json()).error.message);
+      const total = Number(response.headers.get("X-Speech-Parts") || 1);
+      if (!Number.isInteger(total) || total < 1 || total > 50)
+        throw new Error("The spoken reply could not be loaded.");
+      cached.total = total;
+      const blob = await response.blob();
+      cached.parts.set(part, blob);
+      return blob;
+    }
     try {
-      let blob =
-        lastAudio.current?.turnId === turnId
-          ? lastAudio.current.blob
-          : undefined;
-      if (!blob) {
-        const r = await fetch(`/api/v1/sessions/${sessionId}/speech`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ requestId: crypto.randomUUID(), turnId }),
-          signal: controller(),
-        });
-        if (!r.ok) throw new Error((await r.json()).error.message);
-        blob = await r.blob();
-      }
-      if (current !== generation.current) return;
-      lastAudio.current = { turnId, blob };
-      audioUrl.current = URL.createObjectURL(blob);
-      const player = audio.current || new Audio();
-      audio.current = player;
-      player.src = audioUrl.current;
-      player.onended = () => {
-        if (current !== generation.current) return;
-        playing.current = false;
-        if (continueListening && voice.current && stop.current) {
-          setState("listening");
-        } else {
-          busy.current = false;
-          setState("idle");
-        }
-      };
-      player.onerror = () =>
-        fail(
-          new Error("Audio could not play. Tap Listen to hear the caption."),
-          current,
-        );
+      const first = await loadPart(0);
+      if (current !== generation.current || playbackId !== playback.current)
+        return;
+      playing.current = true;
       if (continueListening && voice.current) {
-        playing.current = true;
         const end = await record(
           () => {
             if (current === generation.current) void actions.current.finish();
@@ -350,8 +368,14 @@ export function TutorRoom({
           {
             isPlaying: () => playing.current,
             onInterrupt: () => {
-              if (current !== generation.current || !voice.current) return;
+              if (
+                current !== generation.current ||
+                playbackId !== playback.current ||
+                !voice.current
+              )
+                return;
               clearAudio();
+              abort.current?.abort();
               setState("listening");
             },
             onSilence: () => {
@@ -371,20 +395,61 @@ export function TutorRoom({
           return;
         }
         stop.current = end;
-        // Speech may already have interrupted while the capture was opening.
         if (!playing.current) return;
       }
-      await player.play();
-      setTiming((t) => ({
-        ...t,
-        speech: Math.round(performance.now() - start),
-      }));
+      const player = audio.current || new Audio();
+      audio.current = player;
+      const active = () =>
+        current === generation.current &&
+        playbackId === playback.current &&
+        playing.current;
+      await playSpeechQueue(
+        cached.total,
+        first,
+        loadPart,
+        async (blob) => {
+          if (!active()) return;
+          if (audioUrl.current) URL.revokeObjectURL(audioUrl.current);
+          audioUrl.current = URL.createObjectURL(blob);
+          player.src = audioUrl.current;
+          await new Promise<void>((accept, reject) => {
+            const complete = () => {
+              if (playbackId === playback.current) audioDone.current = null;
+              accept();
+            };
+            audioDone.current = complete;
+            player.onended = complete;
+            player.onerror = () =>
+              reject(
+                new Error(
+                  "Audio could not play. Tap Listen to retry the full reply.",
+                ),
+              );
+            void player.play().then(
+              () =>
+                setTiming((timing) => ({
+                  ...timing,
+                  speech: Math.round(performance.now() - start),
+                })),
+              reject,
+            );
+          });
+        },
+        active,
+      );
+      if (!active()) return;
+      playing.current = false;
+      if (continueListening && voice.current && stop.current)
+        setState("listening");
+      else {
+        busy.current = false;
+        setState("idle");
+      }
     } catch (e) {
       if (
-        continueListening &&
-        voice.current &&
-        stop.current &&
-        !playing.current
+        current !== generation.current ||
+        playbackId !== playback.current ||
+        (continueListening && voice.current && stop.current && !playing.current)
       )
         return;
       fail(e, current);
@@ -505,7 +570,10 @@ export function TutorRoom({
       "speaking",
       "scanning",
     ].includes(state),
-    lang = lesson?.child.language || "mt";
+    lang = lesson?.child.language || "mt",
+    subjectName = subjects.find(
+      (subject) => subject.id === (lesson?.topic.subject || "maths"),
+    )!.title[lang];
   return (
     <Shell>
       <div className="tutor-heading">
@@ -530,7 +598,7 @@ export function TutorRoom({
               <span className="eyebrow">TODAY’S EXPLORATION</span>
               <div className="lesson-symbol">{lesson.topic.icon}</div>
               <span className="year">
-                YEAR {lesson.topic.year} · MATHEMATICS
+                YEAR {lesson.topic.year} · {subjectName}
               </span>
               <h2>{lesson.topic.title[lang]}</h2>
               <p>{lesson.topic.description}</p>
@@ -550,13 +618,15 @@ export function TutorRoom({
                 ? "● Voice is available"
                 : "Text learning is ready. Voice needs setup."}
             </div>
-            <button
-              className="button secondary full scan-toggle"
-              disabled={working}
-              onClick={() => setShowScanner(!showScanner)}
-            >
-              {showScanner ? "Close scanner" : "Scan homework"}
-            </button>
+            {(lesson.topic.subject || "maths") === "maths" && (
+              <button
+                className="button secondary full scan-toggle"
+                disabled={working}
+                onClick={() => setShowScanner(!showScanner)}
+              >
+                {showScanner ? "Close scanner" : "Scan homework"}
+              </button>
+            )}
             {!homework && showScanner && (
               <p className="provider-note">
                 Photo recognition needs an OpenAI API key. You can still chat
@@ -570,7 +640,8 @@ export function TutorRoom({
               <div>
                 <h3>Ħabib · {lesson.child.nickname}</h3>
                 <span>
-                  AI maths tutor · {lang === "mt" ? "Malti" : "English"}
+                  AI tutor · {subjectName} ·{" "}
+                  {lang === "mt" ? "Malti" : "English"}
                 </span>
               </div>
               <span className="online">LET’S TALK IT THROUGH</span>
@@ -738,6 +809,20 @@ export function TutorRoom({
                   Please check the recognised words and numbers, then Send.
                   Voice conversation will continue after your reply.
                 </p>
+              )}
+              {!!(last?.choices || lesson.choices)?.length && !done && (
+                <div className="answer-choices" aria-label="Answer choices">
+                  {(last?.choices || lesson.choices || []).map((choice) => (
+                    <button
+                      key={choice}
+                      className="button secondary small"
+                      disabled={working}
+                      onClick={() => void submit(choice)}
+                    >
+                      {choice}
+                    </button>
+                  ))}
+                </div>
               )}
               <form
                 className="answer-form"

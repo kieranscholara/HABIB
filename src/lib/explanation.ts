@@ -25,7 +25,7 @@ export function repeatedExplanation(reply: string, previous: string[]) {
   });
 }
 export function needsSimplerExplanation(text: string) {
-  return /don.?t understand|do not understand|confus|simpler|simple|break.*down|again|stuck|not sure|no idea|ma (?:fhimtx|nifhimx)|mhux ċar|aktar sempliċi|għadni/i.test(
+  return /don.?t (?:understand|know)|do not (?:understand|know)|confus|simpler|simple|break.*down|again|stuck|not sure|no idea|ma (?:fhimtx|nifhimx|nafx)|mhux ċar|aktar sempliċi|għadni/i.test(
     text,
   );
 }
@@ -42,6 +42,29 @@ export function simplerExplanation(
   const mt = language === "mt";
   const pair = (en: string, maltese: string) => (mt ? maltese : en);
   const candidates: string[] = [];
+  if (topic.subject && topic.subject !== "maths") {
+    candidates.push(
+      exercise.worked[language],
+      exercise.hint[language],
+      pair(
+        `Compare the choices: ${(exercise.choices?.[language] || []).join(", ")}. Look for the one supported by the words or facts in the question.`,
+        `Qabbel l-għażliet: ${(exercise.choices?.[language] || []).join(", ")}. Fittex dik li taqbel mal-kliem jew mat-tagħrif fil-mistoqsija.`,
+      ),
+      pair(
+        "Read the question slowly and point to the clue that supports your answer. Explain that clue in your own words.",
+        "Aqra l-mistoqsija bil-mod u sib il-ħjiel li jsostni t-tweġiba tiegħek. Spjega dan il-ħjiel fi kliemek.",
+      ),
+    );
+    return (
+      candidates.find(
+        (candidate) => !repeatedExplanation(candidate, previous),
+      ) ||
+      pair(
+        "Tell me which word or idea is unclear and I will explain that specific part with another example.",
+        "Għidli liema kelma jew idea mhix ċara u nispjega dik il-parti b’eżempju ieħor.",
+      )
+    );
+  }
   const equation = exercise.worked.en.match(
     /(-?\d+(?:\.\d+)?)\s*([+×*÷/−-])\s*(-?\d+(?:\.\d+)?)\s*=/,
   );

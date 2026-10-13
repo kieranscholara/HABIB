@@ -87,10 +87,14 @@ export async function bounded(req: NextRequest, max: number) {
   }
   return result;
 }
-export async function body<T>(req: NextRequest, schema: z.ZodType<T>) {
+export async function body<T>(
+  req: NextRequest,
+  schema: z.ZodType<T>,
+  max = 12000,
+) {
   let value: unknown;
   try {
-    value = JSON.parse(new TextDecoder().decode(await bounded(req, 12000)));
+    value = JSON.parse(new TextDecoder().decode(await bounded(req, max)));
   } catch (e) {
     if (e instanceof AppError) throw e;
     throw new AppError("VALIDATION_ERROR", "Invalid JSON.");

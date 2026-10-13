@@ -57,15 +57,15 @@ export async function ownedChild(db: DB, parentId: string, childId: string) {
     );
   return rows[0];
 }
-export async function consent(db: DB, childId: string) {
+export async function consent(db: DB, childId: string, subject = "maths") {
   const rows = await db.all(
-    "SELECT id FROM consents WHERE child_id=? AND purpose=? AND policy_version=? AND revoked_at IS NULL",
-    [childId, "maths_tutoring", "1.0"],
+    "SELECT id FROM consents WHERE child_id=? AND revoked_at IS NULL AND ((purpose='school_tutoring' AND policy_version='1.1') OR (purpose='maths_tutoring' AND policy_version='1.0' AND ?='maths'))",
+    [childId, subject],
   );
   if (!rows.length)
     throw new AppError(
       "PARENT_CONSENT_REQUIRED",
-      "Parent authorisation is required before learning.",
+      "Parent authorisation for this subject is required in My children.",
       403,
     );
 }
@@ -113,11 +113,11 @@ export async function ownedSession(
       409,
     );
   const child = await ownedChild(db, parentId, s.child_id);
-  await consent(db, s.child_id);
   await entitlement(db, parentId);
   const topic = topicById(s.topic_id);
   if (!topic)
     throw new AppError("TOPIC_UNAVAILABLE", "This topic is unavailable.");
+  await consent(db, s.child_id, topic.subject || "maths");
   if (isProduction() && !(await approved(db, topic)))
     throw new AppError(
       "TOPIC_UNREVIEWED",

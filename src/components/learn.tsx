@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, post, type Kid, type PublicTopic } from "@/lib/client";
 import { Shell, PageHeading, Empty, ErrorNote } from "./ui";
+import { subjects, type Subject } from "@/lib/subjects";
 export function Learn({ childId = "" }: { childId?: string }) {
   const router = useRouter(),
     [kids, setKids] = useState<Kid[]>([]),
@@ -12,6 +13,7 @@ export function Learn({ childId = "" }: { childId?: string }) {
     [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
     [loaded, setLoaded] = useState(false);
+  const [subject, setSubject] = useState<Subject>("maths");
   useEffect(() => {
     Promise.all([api("children"), api("curriculum")])
       .then(([k, t]) => {
@@ -23,6 +25,10 @@ export function Learn({ childId = "" }: { childId?: string }) {
       .catch((e) => setError(e.message));
   }, [childId]);
   const kid = kids.find((k) => k.id === selected);
+  const canLearn = subject === "maths" ? kid?.consented : kid?.school_consented;
+  const subjectName = subjects.find((s) => s.id === subject)!.title[
+    kid?.language || "mt"
+  ];
   async function start(topic: PublicTopic) {
     setBusy(topic.id);
     setError("");
@@ -48,7 +54,7 @@ export function Learn({ childId = "" }: { childId?: string }) {
             className="button secondary"
             href={"/homework?child=" + selected}
           >
-            Scan homework →
+            Scan maths homework →
           </Link>
         }
       />
@@ -58,13 +64,27 @@ export function Learn({ childId = "" }: { childId?: string }) {
       ) : !kids.length ? (
         <Empty
           title="Let’s meet your little learner."
-          text="Add and authorise a child profile to explore mathematics."
+          text="Add and authorise a child profile to explore school subjects."
           href="/children"
           label="Add a profile"
         />
       ) : (
         <>
           <div className="learning-toolbar">
+            <label>
+              Subject
+              <select
+                aria-label="Subject"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value as Subject)}
+              >
+                {subjects.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.title[kid?.language || "mt"]}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div className="kid-tabs">
               {kids.map((k, i) => (
                 <button
@@ -84,17 +104,32 @@ export function Learn({ childId = "" }: { childId?: string }) {
               {kid?.language === "mt" ? "Malti" : "English"}
             </span>
           </div>
-          {!kid?.consented && (
+          {!canLearn && (
             <Empty
               title="A quick step for parents."
-              text="Please authorise maths tutoring for this profile before starting a lesson."
+              text="Please authorise this subject for the profile in My children before starting."
               href="/children"
               label="Manage authorisation"
             />
           )}
+          <p className="curriculum-note">
+            Malta national curriculum · Years 4–6. These practice lessons are
+            awaiting official outcome mapping and teacher review.{" "}
+            <a
+              href="https://curriculum.gov.mt/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Official curriculum portal →
+            </a>
+          </p>
           <div className="topic-grid">
             {topics
-              .filter((t) => t.year === kid?.school_year)
+              .filter(
+                (t) =>
+                  t.year === kid?.school_year &&
+                  (t.subject || "maths") === subject,
+              )
               .map((topic, i) => (
                 <article
                   className={"topic-tile shade-" + (i % 3)}
@@ -107,7 +142,7 @@ export function Learn({ childId = "" }: { childId?: string }) {
                       : "Test lesson · awaiting review"}
                   </span>
                   <span className="eyebrow">
-                    YEAR {topic.year} · MATHEMATICS
+                    YEAR {topic.year} · {subjectName}
                   </span>
                   <h2>{topic.title[kid?.language || "mt"]}</h2>
                   <p>{topic.description}</p>
@@ -116,7 +151,7 @@ export function Learn({ childId = "" }: { childId?: string }) {
                     <button
                       className="arrow-button"
                       aria-label={"Start " + topic.title.en}
-                      disabled={!kid?.consented || !!busy}
+                      disabled={!canLearn || !!busy}
                       onClick={() => void start(topic)}
                     >
                       {busy === topic.id ? "…" : "→"}
@@ -125,7 +160,10 @@ export function Learn({ childId = "" }: { childId?: string }) {
                 </article>
               ))}
           </div>
-          {!topics.filter((t) => t.year === kid?.school_year).length && (
+          {!topics.filter(
+            (t) =>
+              t.year === kid?.school_year && (t.subject || "maths") === subject,
+          ).length && (
             <Empty
               title="Good lessons take care."
               text="Topics for this school year are awaiting teacher approval. Check back after review."
@@ -134,8 +172,9 @@ export function Learn({ childId = "" }: { childId?: string }) {
           <div className="info-strip">
             <span>✦</span>
             <p>
-              Ħabib is an AI tutor. It will guide with hints and questions. A
-              trusted adult is always the best person to ask for help.
+              Ħabib is an AI tutor. It can explain the method, show the working
+              and help you check your answer. A trusted adult is always the best
+              person to ask for help.
             </p>
           </div>
         </>

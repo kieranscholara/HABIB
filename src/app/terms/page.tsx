@@ -7,9 +7,9 @@ export default function Page() {
         <span className="eyebrow">EARLY ACCESS TERMS · PRE-LAUNCH DRAFT</span>
         <h1>A little help, used with care.</h1>
         <p>
-          Ħabib is an AI mathematics learning tool for Years 4–6. It supports
-          practice and does not replace a teacher, parent, emergency service or
-          professional advice.
+          Ħabib is an AI learning tool for Maths, English, Maltese and Science
+          for Years 4–6. It supports practice and does not replace a teacher,
+          parent, emergency service or professional advice.
         </p>
         <h2>Parent responsibility</h2>
         <p>

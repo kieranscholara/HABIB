@@ -273,6 +273,54 @@ it("uses formatted speech while retaining the original lesson caption", async ()
   expect(options.body).not.toContain("20 ÷ 4");
   expect(response.headers.get("Content-Type")).toBe("audio/wav");
 });
+it("synthesises every part of a long stored reply and reports the total without truncating the end", async () => {
+  const turnId = randomUUID();
+  const text =
+    "First identify the given amount and divide it into equal parts. Now combine the required parts and check the calculation. ".repeat(
+      8,
+    ) + "This is the final check at the end of the complete explanation.";
+  await transaction((db) =>
+    db.run(
+      "INSERT INTO tutor_turns(id,session_id,client_turn_id,turn_index,response_json,created_at) VALUES(?,?,?,?,?,?)",
+      [
+        turnId,
+        sessionId,
+        randomUUID(),
+        0,
+        JSON.stringify({ text }),
+        new Date().toISOString(),
+      ],
+    ),
+  );
+  fetchProvider.mockImplementation(async () => new Response(wav()));
+  const req = (part: number) =>
+    new NextRequest("http://localhost:3000", {
+      method: "POST",
+      body: JSON.stringify({ requestId: randomUUID(), turnId, part }),
+    });
+  const first = await speechRequest(req(0), parentId, sessionId);
+  const total = Number(first.headers.get("X-Speech-Parts"));
+  expect(total).toBeGreaterThan(3);
+  for (let part = 1; part < total; part++)
+    expect((await speechRequest(req(part), parentId, sessionId)).status).toBe(
+      200,
+    );
+  expect(fetchProvider.mock.calls.at(-1)![1].body).toContain(
+    "final check at the end",
+  );
+  expect(fetchProvider.mock.calls[0][1].body).not.toContain(
+    "final check at the end",
+  );
+  const before = await transaction((db) =>
+    db.all("SELECT id FROM usage_events"),
+  );
+  await expect(
+    speechRequest(req(total), parentId, sessionId),
+  ).rejects.toMatchObject({ code: "SPEECH_PART_INVALID" });
+  expect(
+    await transaction((db) => db.all("SELECT id FROM usage_events")),
+  ).toHaveLength(before.length);
+});
 it("extracts multiple questions without persisting the photo or exposing answers", async () => {
   const { homeworkRequest } = await import("../src/lib/providers");
   const { vi } = await import("vitest");

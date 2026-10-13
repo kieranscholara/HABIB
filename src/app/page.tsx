@@ -16,7 +16,7 @@ export default function Home() {
               <em>Bright minds.</em>
             </h1>
             <p>
-              Give your child a little more confidence in maths.
+              Build confidence in Maths, English, Maltese and Science.
               <br />
               Ħabib guides them through one idea at a time,
               <br />
@@ -90,7 +90,7 @@ export default function Home() {
               [
                 "02",
                 "Understanding, step by step",
-                "Short questions and helpful hints encourage your child to work things out, rather than copy an answer.",
+                "Worked examples show the method, the answer and why it makes sense. Ask follow-up questions whenever a step is unclear.",
                 "✳",
               ],
               [
@@ -114,7 +114,7 @@ export default function Home() {
             <span className="eyebrow">FOR YOUR LITTLE LEARNERS</span>
             <h2>A calm corner for curious minds.</h2>
             <p>
-              One family account. Two child profiles. Maths in their own time.
+              One family account. Two child profiles. Four subjects to explore.
             </p>
           </div>
           <Link href="/signup" className="button">

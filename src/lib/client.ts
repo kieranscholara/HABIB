@@ -23,8 +23,15 @@ export interface Kid {
   school_year: number;
   language: "mt" | "en";
   consented: number;
+  school_consented?: number;
 }
 export interface PublicTopic {
+  subject: "maths" | "english" | "maltese" | "science";
+  curriculum?: {
+    name: string;
+    verification: string;
+    officialPortals: string[];
+  };
   id: string;
   year: number;
   title: { en: string; mt: string };

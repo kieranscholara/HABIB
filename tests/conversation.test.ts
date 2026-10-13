@@ -101,7 +101,7 @@ it("rejects a repeated model reply and explicitly asks for a new representation 
     ),
   ).toBeNull();
   const payload = JSON.parse(provider.mock.calls[0][1].body);
-  expect(payload.messages[0].content).toContain("one tiny action");
+  expect(payload.messages[0].content).toContain("worked solution");
   expect(payload.messages[0].content).toContain("different one");
 });
 it("rejects parroting the original question on the first request for help", async () => {
@@ -160,6 +160,53 @@ it("falls back when model arithmetic is wrong or the provider fails", async () =
   expect(
     await conversationalReply(
       "Explain",
+      topicById("Y5-FRACTIONS")!,
+      0,
+      "en",
+      [],
+    ),
+  ).toBeNull();
+});
+it("accepts complete worked explanations longer than the old limit and rejects generation cutoffs", async () => {
+  vi.stubEnv("HABIB_OPENAI_KEY", "fixture_not_a_credential");
+  const reply =
+    "We are finding three quarters of 20. First divide 20 by 4: 20 ÷ 4 = 5. A quarter is one of four equal parts, so each part contains 5. Now take three of those parts: 5 × 3 = 15. Check by adding the equal parts: 5 + 5 + 5 = 15. We used only three parts because the numerator is 3. The fourth part is left out, so 15 is less than the whole amount of 20. Draw four boxes with five counters in each and circle three boxes to see exactly what the fraction means. Which step would you like another example of?";
+  const result = (finish_reason: string) =>
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            finish_reason,
+            message: {
+              content: JSON.stringify({
+                reply,
+                mathClaims: [
+                  { expression: "20/4", value: 5 },
+                  { expression: "5*3", value: 15 },
+                ],
+                safetyState: "normal",
+              }),
+            },
+          },
+        ],
+      }),
+    );
+  provider.mockResolvedValue(result("stop"));
+  expect(
+    (
+      await conversationalReply(
+        "Solve and explain",
+        topicById("Y5-FRACTIONS")!,
+        0,
+        "en",
+        [],
+      )
+    )?.reply,
+  ).toBe(reply);
+  provider.mockResolvedValue(result("length"));
+  expect(
+    await conversationalReply(
+      "Solve and explain",
       topicById("Y5-FRACTIONS")!,
       0,
       "en",

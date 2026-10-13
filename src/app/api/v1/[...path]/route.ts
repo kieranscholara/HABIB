@@ -14,13 +14,7 @@ import {
   issueSession,
 } from "@/lib/auth";
 import { transaction, isProduction, query } from "@/lib/data/db";
-import {
-  curriculum,
-  publicTopic,
-  topicById,
-  teaching,
-  numericAnswer,
-} from "@/lib/curriculum";
+import { curriculum, publicTopic, topicById, teaching } from "@/lib/curriculum";
 import {
   approved,
   ownedChild,
@@ -37,13 +31,10 @@ import {
   homeworkRequest,
 } from "@/lib/providers";
 import { conversationalReply, historySchema } from "@/lib/tutor-provider";
-import {
-  simplerExplanation,
-  repeatedExplanation,
-  needsSimplerExplanation,
-} from "@/lib/explanation";
 import { homeworkSchema } from "@/lib/homework";
 import { appVersion } from "@/lib/version";
+import { subjects, nationalCurriculum } from "@/lib/subjects";
+import { workedExplanation } from "@/lib/worked-explanation";
 import { billing, webhook } from "@/lib/billing";
 export const runtime = "nodejs";
 const account = z.object({
@@ -244,8 +235,8 @@ async function handler(req: NextRequest, context: Context) {
       return await transaction(async (db) =>
         json({
           children: await db.all(
-            "SELECT c.*, CASE WHEN EXISTS(SELECT 1 FROM consents n WHERE n.child_id=c.id AND n.revoked_at IS NULL AND n.policy_version=?) THEN 1 ELSE 0 END AS consented FROM children c WHERE c.parent_id=? ORDER BY c.created_at",
-            ["1.0", user.id],
+            "SELECT c.*, CASE WHEN EXISTS(SELECT 1 FROM consents n WHERE n.child_id=c.id AND n.revoked_at IS NULL AND ((n.policy_version='1.0' AND n.purpose='maths_tutoring') OR (n.policy_version='1.1' AND n.purpose='school_tutoring'))) THEN 1 ELSE 0 END AS consented, CASE WHEN EXISTS(SELECT 1 FROM consents n WHERE n.child_id=c.id AND n.revoked_at IS NULL AND n.policy_version='1.1' AND n.purpose='school_tutoring') THEN 1 ELSE 0 END AS school_consented FROM children c WHERE c.parent_id=? ORDER BY c.created_at",
+            [user.id],
           ),
         }),
       );
@@ -285,7 +276,7 @@ async function handler(req: NextRequest, context: Context) {
           req,
           z.object({
             authorised: z.literal(true),
-            policyVersion: z.literal("1.0"),
+            policyVersion: z.enum(["1.0", "1.1"]),
           }),
         );
         return await transaction(async (db) => {
@@ -301,7 +292,9 @@ async function handler(req: NextRequest, context: Context) {
               user.id,
               childId,
               input.policyVersion,
-              "maths_tutoring",
+              input.policyVersion === "1.1"
+                ? "school_tutoring"
+                : "maths_tutoring",
               isProduction()
                 ? "verified_parent_account"
                 : "development_parent_account",
@@ -353,7 +346,7 @@ async function handler(req: NextRequest, context: Context) {
           const reviewed = await approved(db, t);
           if (!isProduction() || reviewed) list.push(publicTopic(t, reviewed));
         }
-        return json({ topics: list });
+        return json({ topics: list, subjects, curriculum: nationalCurriculum });
       });
     if (path === "progress" && method === "GET")
       return await transaction(async (db) =>
@@ -375,7 +368,6 @@ async function handler(req: NextRequest, context: Context) {
       );
       return await transaction(async (db) => {
         const child = await ownedChild(db, user.id, input.childId);
-        await consent(db, child.id);
         await entitlement(db, user.id);
         const topic = topicById(input.topicId);
         if (!topic || topic.year !== child.school_year)
@@ -383,6 +375,7 @@ async function handler(req: NextRequest, context: Context) {
             "TOPIC_UNAVAILABLE",
             "Choose a topic for your child’s school year.",
           );
+        await consent(db, child.id, topic.subject || "maths");
         if (isProduction() && !(await approved(db, topic)))
           throw new AppError(
             "TOPIC_UNREVIEWED",
@@ -424,6 +417,10 @@ async function handler(req: NextRequest, context: Context) {
             },
             topic: publicTopic(topic, await approved(db, topic)),
             opening: topic.exercises[0].prompt[child.language],
+            choices:
+              topic.exercises[
+                Math.min(session.step, topic.exercises.length - 1)
+              ]?.choices?.[child.language] || [],
             turns: turns.map((t) => JSON.parse(t.response_json)),
           });
         });
@@ -456,6 +453,7 @@ async function handler(req: NextRequest, context: Context) {
               conversation: z.boolean().optional().default(false),
             })
             .strict(),
+          128000,
         );
         const start = performance.now();
         const context = await transaction((db) =>
@@ -485,8 +483,7 @@ async function handler(req: NextRequest, context: Context) {
           context.child.language,
         );
         const aiReply =
-          numericAnswer(input.text) === null &&
-          baseline.safetyState === "normal"
+          baseline.correct !== true && baseline.safetyState === "normal"
             ? await conversationalReply(
                 input.text,
                 context.topic,
@@ -541,26 +538,25 @@ async function handler(req: NextRequest, context: Context) {
             result.nextStep = session.step;
             result.nextMistakes = session.mistakes;
           }
-          if (
-            result.correct === null &&
+          const usableReply =
+            result.correct !== true &&
             result.safetyState === "normal" &&
-            aiReply &&
             session.step === context.session.step &&
             session.turn_count === context.session.turn_count &&
             session.homework_json === context.session.homework_json
-          ) {
-            result.text = aiReply.reply;
-            result.safetyState = aiReply.safetyState;
+              ? aiReply
+              : null;
+          if (usableReply) {
+            result.text = usableReply.reply;
+            result.safetyState = usableReply.safetyState;
             result.type = "explain";
           }
           if (
             result.correct !== true &&
             result.safetyState === "normal" &&
-            !aiReply &&
-            (needsSimplerExplanation(input.text) ||
-              repeatedExplanation(result.text, priorReplies))
+            !usableReply
           ) {
-            result.text = simplerExplanation(
+            result.text = workedExplanation(
               topic,
               session.step,
               child.language,
@@ -603,8 +599,10 @@ async function handler(req: NextRequest, context: Context) {
             complete: done,
             safetyState: result.safetyState,
             type: result.type,
-            conversational: !!aiReply,
+            conversational: !!usableReply,
             tutorMs: Math.round(performance.now() - start),
+            choices:
+              topic.exercises[result.nextStep]?.choices?.[child.language] || [],
           };
           await db.run(
             "INSERT INTO tutor_turns(id,session_id,client_turn_id,turn_index,response_json,created_at) VALUES(?,?,?,?,?,?)",
