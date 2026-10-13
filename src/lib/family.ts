@@ -114,7 +114,7 @@ export async function ownedSession(
     );
   const child = await ownedChild(db, parentId, s.child_id);
   await entitlement(db, parentId);
-  const topic = topicById(s.topic_id);
+  let topic = topicById(s.topic_id);
   if (!topic)
     throw new AppError("TOPIC_UNAVAILABLE", "This topic is unavailable.");
   await consent(db, s.child_id, topic.subject || "maths");
@@ -124,6 +124,16 @@ export async function ownedSession(
       "This lesson is awaiting teacher approval.",
       403,
     );
+  if (
+    !s.homework_json &&
+    s.status === "complete" &&
+    topic.legacySteps === s.step
+  )
+    topic = {
+      ...topic,
+      legacy: true,
+      exercises: topic.exercises.slice(0, topic.legacySteps),
+    };
   return {
     session: s,
     child,

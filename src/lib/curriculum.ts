@@ -3,7 +3,17 @@ import type { Subject } from "./subjects";
 import { nationalCurriculum } from "./subjects";
 import { subjectLessons } from "./subject-lessons";
 import { needsSimplerExplanation } from "./explanation";
+import { prepareTopic } from "./lesson-programme";
+import { englishStudios } from "./english-studios";
 export interface Exercise {
+  responseMode?: "open";
+  responseKind?: "speaking" | "writing";
+  rubric?: Record<Language, string[]>;
+  stimulus?: string;
+  scene?: "garden" | "compare";
+  taskLanguage?: Language;
+  stage?: "practice" | "check";
+  passage?: string;
   prompt: Record<Language, string>;
   hint: Record<Language, string>;
   worked: Record<Language, string>;
@@ -12,6 +22,9 @@ export interface Exercise {
   choices?: Record<Language, string[]>;
 }
 export interface Topic {
+  sourceRefs?: string[];
+  legacySteps?: number;
+  legacy?: boolean;
   id: string;
   year: number;
   title: Record<Language, string>;
@@ -471,7 +484,10 @@ add(
     ),
   ],
 );
-export const curriculum = [...topics, ...subjectLessons];
+export const curriculum = [
+  ...[...topics, ...subjectLessons].map(prepareTopic),
+  ...englishStudios,
+];
 export function topicById(id: string) {
   return curriculum.find((t) => t.id === id);
 }
@@ -484,6 +500,10 @@ export function publicTopic(topic: Topic, approved: boolean) {
     description: topic.description,
     steps: topic.exercises.length,
     approved,
+    legacy: !!topic.legacy,
+    sourceRefs: topic.sourceRefs || [],
+    practiceSteps: topic.exercises.filter((e) => e.stage !== "check").length,
+    checkSteps: topic.exercises.filter((e) => e.stage === "check").length,
     subject: topic.subject || "maths",
     curriculum: nationalCurriculum,
   };
@@ -622,6 +642,15 @@ export function teaching(
       correct: null,
       type: "redirect",
       safetyState: "escalate",
+    };
+  if (exercise.responseMode === "open")
+    return {
+      text: exercise.hint[lang] + "\n\n" + exercise.prompt[lang],
+      nextStep: step,
+      nextMistakes: mistakes,
+      correct: null,
+      type: "give_hint",
+      safetyState: "normal",
     };
   const textAnswer = (text: string) =>
     text

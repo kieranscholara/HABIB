@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { practiceTurn, taskDetails } from "@/lib/open-response";
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -35,6 +36,8 @@ import { homeworkSchema } from "@/lib/homework";
 import { appVersion } from "@/lib/version";
 import { subjects, nationalCurriculum } from "@/lib/subjects";
 import { workedExplanation } from "@/lib/worked-explanation";
+import { learningPlan } from "@/lib/learning-coach";
+import { isTopicCheck, checkTurn, checkSummary } from "@/lib/topic-check";
 import { billing, webhook } from "@/lib/billing";
 export const runtime = "nodejs";
 const account = z.object({
@@ -421,6 +424,15 @@ async function handler(req: NextRequest, context: Context) {
               topic.exercises[
                 Math.min(session.step, topic.exercises.length - 1)
               ]?.choices?.[child.language] || [],
+            phase: isTopicCheck(topic, session.step) ? "check" : "practice",
+            task:
+              session.status === "active"
+                ? taskDetails(topic, session.step, child.language)
+                : null,
+            activity:
+              session.status === "active" && !isTopicCheck(topic, session.step)
+                ? learningPlan(topic, session.step, child.language).activity
+                : null,
             turns: turns.map((t) => JSON.parse(t.response_json)),
           });
         });
@@ -448,7 +460,11 @@ async function handler(req: NextRequest, context: Context) {
           z
             .object({
               clientTurnId: id,
-              text: z.string().trim().min(1).max(500),
+              text: z.string().trim().min(1).max(4000),
+              intent: z
+                .enum(["answer", "feedback", "continue"])
+                .default("answer"),
+              reviewQuestion: z.number().int().min(0).max(999).optional(),
               history: historySchema.optional().default([]),
               conversation: z.boolean().optional().default(false),
             })
@@ -466,32 +482,83 @@ async function handler(req: NextRequest, context: Context) {
           ),
         );
         if (previous[0]) return json(JSON.parse(previous[0].response_json));
-        const priorReplies = await transaction(async (db) => {
+        const priorTurns = await transaction(async (db) => {
           const rows = await db.all<{ response_json: string }>(
-            "SELECT response_json FROM tutor_turns WHERE session_id=? ORDER BY created_at ASC LIMIT 60",
+            "SELECT response_json FROM tutor_turns WHERE session_id=? ORDER BY turn_index ASC LIMIT 240",
             [sessionId],
           );
-          return rows.map(
-            (row) => JSON.parse(row.response_json).text as string,
-          );
+          return rows.map((row) => JSON.parse(row.response_json));
         });
-        const baseline = teaching(
-          context.topic,
-          Math.min(context.session.step, context.topic.exercises.length - 1),
-          context.session.mistakes,
-          input.text,
-          context.child.language,
-        );
+        if (
+          input.reviewQuestion !== undefined &&
+          (context.session.status !== "complete" ||
+            !isTopicCheck(context.topic, input.reviewQuestion))
+        )
+          throw new AppError(
+            "REVIEW_UNAVAILABLE",
+            "Choose a completed topic-check question to review.",
+          );
+        const selectedReview =
+          input.reviewQuestion ?? priorTurns.at(-1)?.reviewQuestion;
+        const tutoringStep =
+          context.session.status === "complete" &&
+          typeof selectedReview === "number" &&
+          isTopicCheck(context.topic, selectedReview)
+            ? selectedReview
+            : Math.min(
+                context.session.step,
+                context.topic.exercises.length - 1,
+              );
+        const priorReplies = priorTurns
+          .filter((turn) => (turn.questionStep ?? turn.step) === tutoringStep)
+          .map((turn) => turn.text as string);
+        const checking =
+          context.session.status === "active" &&
+          isTopicCheck(context.topic, context.session.step);
+        const practice =
+          !checking &&
+          !context.topic.homework &&
+          context.session.status === "active"
+            ? practiceTurn(
+                context.topic,
+                context.session.step,
+                context.session.mistakes,
+                input.text,
+                context.child.language,
+                priorTurns,
+                input.intent,
+              )
+            : null;
+        const baseline =
+          (checking
+            ? checkTurn(
+                context.topic,
+                context.session.step,
+                input.text,
+                context.child.language,
+              )
+            : practice) ||
+          teaching(
+            context.topic,
+            tutoringStep,
+            context.session.mistakes,
+            input.text,
+            context.child.language,
+          );
         const aiReply =
-          baseline.correct !== true && baseline.safetyState === "normal"
+          baseline.correct !== true &&
+          !checking &&
+          baseline.safetyState === "normal" &&
+          (!practice || practice.guide || practice.submissionReceived)
             ? await conversationalReply(
                 input.text,
                 context.topic,
-                context.session.step,
+                tutoringStep,
                 context.child.language,
                 input.history,
                 context.session.status === "complete",
                 priorReplies,
+                practice?.guide,
               )
             : null;
         return await transaction(async (db) => {
@@ -512,19 +579,47 @@ async function handler(req: NextRequest, context: Context) {
               "This lesson is complete.",
               409,
             );
-          if (session.turn_count >= 60)
+          if (session.turn_count >= 240)
             throw new AppError(
               "TURN_LIMIT",
               "Take a break and start another lesson.",
               429,
             );
-          const result = teaching(
-            topic,
-            Math.min(session.step, topic.exercises.length - 1),
-            session.mistakes,
-            input.text,
-            child.language,
+          const currentTurns = await db.all<{ response_json: string }>(
+            "SELECT response_json FROM tutor_turns WHERE session_id=? ORDER BY turn_index ASC",
+            [sessionId],
           );
+          const currentChecking =
+            session.status === "active" && isTopicCheck(topic, session.step);
+          const currentCheck = currentChecking
+            ? checkTurn(topic, session.step, input.text, child.language)
+            : null;
+          const currentPractice =
+            !currentChecking && !topic.homework && session.status === "active"
+              ? practiceTurn(
+                  topic,
+                  session.step,
+                  session.mistakes,
+                  input.text,
+                  child.language,
+                  currentTurns.map((turn) => JSON.parse(turn.response_json)),
+                  input.intent,
+                )
+              : null;
+          const currentTutoringStep =
+            session.status === "complete" && isTopicCheck(topic, tutoringStep)
+              ? tutoringStep
+              : Math.min(session.step, topic.exercises.length - 1);
+          const result =
+            currentCheck ||
+            currentPractice ||
+            teaching(
+              topic,
+              currentTutoringStep,
+              session.mistakes,
+              input.text,
+              child.language,
+            );
           if (session.status === "complete") {
             if (result.safetyState === "normal")
               result.text = teaching(
@@ -539,8 +634,12 @@ async function handler(req: NextRequest, context: Context) {
             result.nextMistakes = session.mistakes;
           }
           const usableReply =
+            !currentChecking &&
             result.correct !== true &&
             result.safetyState === "normal" &&
+            (!currentPractice ||
+              currentPractice.guide ||
+              currentPractice.submissionReceived) &&
             session.step === context.session.step &&
             session.turn_count === context.session.turn_count &&
             session.homework_json === context.session.homework_json
@@ -554,11 +653,13 @@ async function handler(req: NextRequest, context: Context) {
           if (
             result.correct !== true &&
             result.safetyState === "normal" &&
-            !usableReply
+            !usableReply &&
+            !currentPractice &&
+            !currentChecking
           ) {
             result.text = workedExplanation(
               topic,
-              session.step,
+              currentTutoringStep,
               child.language,
               priorReplies,
             );
@@ -566,15 +667,20 @@ async function handler(req: NextRequest, context: Context) {
           }
           const done = result.nextStep >= topic.exercises.length;
           const now = new Date().toISOString();
-          if (result.correct !== null) {
+          if (
+            result.correct !== null ||
+            (currentPractice?.revealed && !currentPractice.needsReview)
+          ) {
             await db.run(
               "INSERT INTO question_attempts(id,session_id,question_id,is_correct,hints_used,created_at) VALUES(?,?,?,?,?,?)",
               [
                 uuid(),
                 sessionId,
-                `${session.homework_json ? "HOMEWORK" : topic.id}:${session.step}`,
+                `${session.homework_json ? "HOMEWORK" : topic.id}:${session.step}${currentPractice?.revealed ? ":assisted" : ""}`,
                 result.correct ? 1 : 0,
-                session.mistakes,
+                currentPractice?.revealed
+                  ? currentPractice.coaching!.failures
+                  : session.mistakes,
                 now,
               ],
             );
@@ -589,6 +695,11 @@ async function handler(req: NextRequest, context: Context) {
                 now,
               ],
             );
+          } else if (done && session.status === "active") {
+            await db.run(
+              "INSERT INTO topic_progress(child_id,topic_id,questions_attempted,correct_count,completed_lessons,last_practised_at) VALUES(?,?,?,?,?,?) ON CONFLICT(child_id,topic_id) DO UPDATE SET completed_lessons=topic_progress.completed_lessons+1,last_practised_at=excluded.last_practised_at",
+              [child.id, topic.id, 0, 0, 1, now],
+            );
           }
           const response = {
             id: uuid(),
@@ -600,9 +711,44 @@ async function handler(req: NextRequest, context: Context) {
             safetyState: result.safetyState,
             type: result.type,
             conversational: !!usableReply,
+            questionStep: currentTutoringStep,
+            reviewQuestion: done ? currentTutoringStep : null,
+            phase: isTopicCheck(topic, result.nextStep) ? "check" : "practice",
+            task: !done
+              ? taskDetails(topic, result.nextStep, child.language)
+              : null,
+            submissionReceived: currentPractice?.submissionReceived || false,
+            needsReview: currentPractice?.needsReview || false,
+            checkResult: currentCheck?.checkResult || null,
+            checkSummary:
+              done && currentCheck
+                ? checkSummary(
+                    topic,
+                    [
+                      ...currentTurns
+                        .map(
+                          (turn) => JSON.parse(turn.response_json).checkResult,
+                        )
+                        .filter(Boolean),
+                      ...(currentCheck.checkResult
+                        ? [currentCheck.checkResult]
+                        : []),
+                    ],
+                    child.language,
+                  )
+                : null,
+            coaching: currentPractice?.coaching || null,
+            revealed: currentPractice?.revealed || false,
+            activity:
+              !done && !isTopicCheck(topic, result.nextStep)
+                ? currentPractice?.activity ||
+                  learningPlan(topic, result.nextStep, child.language).activity
+                : null,
             tutorMs: Math.round(performance.now() - start),
             choices:
-              topic.exercises[result.nextStep]?.choices?.[child.language] || [],
+              currentPractice?.choices ||
+              topic.exercises[result.nextStep]?.choices?.[child.language] ||
+              [],
           };
           await db.run(
             "INSERT INTO tutor_turns(id,session_id,client_turn_id,turn_index,response_json,created_at) VALUES(?,?,?,?,?,?)",

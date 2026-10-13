@@ -162,10 +162,14 @@ export default function Page() {
                     </small>
                   </div>
                   <span className="accuracy">
-                    {Math.round(
-                      (p.correct_count / p.questions_attempted) * 100,
-                    )}
-                    %<small>accuracy</small>
+                    {p.questions_attempted
+                      ? Math.round(
+                          (p.correct_count / p.questions_attempted) * 100,
+                        ) + "%"
+                      : "Review"}
+                    <small>
+                      {p.questions_attempted ? "accuracy" : "open work"}
+                    </small>
                   </span>
                 </div>
               ))}

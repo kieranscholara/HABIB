@@ -75,6 +75,35 @@ describe("mathematical correctness", () => {
         .exercises[0].answer,
     ).toBe(4);
   });
+  it("has independently calculated topic-check answers across all eighteen maths programmes", () => {
+    const cases: [string, number[]][] = [
+      ["Y4-PLACE", [500, 480, 489]],
+      ["Y4-ADD", [62, 36, 65]],
+      ["Y4-TABLES", [20, 42, 24]],
+      ["Y4-DIVISION", [5, 7, 9]],
+      ["Y4-TIME", [240, 7, 12]],
+      ["Y4-SHAPES", [8, 5, 4]],
+      ["Y5-NUMBERS", [6900, 6250, 900]],
+      ["Y5-MULTIPLY", [91, 15, 85]],
+      ["Y5-FRACTIONS", [24, 18, 32]],
+      ["Y5-DECIMALS", [0.85, 1.2, 3.75]],
+      ["Y5-MEASURES", [500, 0.75, 125]],
+      ["Y5-AREA", [40, 26, 9]],
+      ["Y6-FRACTIONS", [24, 18, 32]],
+      ["Y6-PERCENT", [20, 30, 75]],
+      ["Y6-RATIO", [15, 12, 12]],
+      ["Y6-PROBLEMS", [23, 8, 15]],
+      ["Y6-AREA", [40, 26, 9]],
+      ["Y6-DATA", [21, 7, 4]],
+    ];
+    for (const [id, answers] of cases)
+      expect(
+        topicById(id)!
+          .exercises.filter((e) => e.stage === "check")
+          .map((e) => e.answer),
+        id,
+      ).toEqual(answers);
+  });
   it("provides a help message without continuing on concerning disclosures", () => {
     expect(
       teaching(topicById("Y4-ADD")!, 0, 0, "I am in danger", "en").safetyState,

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { api, post, type Kid, type PublicTopic } from "@/lib/client";
 import { Shell, PageHeading, Empty, ErrorNote } from "./ui";
 import { subjects, type Subject } from "@/lib/subjects";
+import { programmeCoverage, sourceResearch } from "@/lib/programme-coverage";
 export function Learn({ childId = "" }: { childId?: string }) {
   const router = useRouter(),
     [kids, setKids] = useState<Kid[]>([]),
@@ -113,8 +114,10 @@ export function Learn({ childId = "" }: { childId?: string }) {
             />
           )}
           <p className="curriculum-note">
-            Malta national curriculum · Years 4–6. These practice lessons are
-            awaiting official outcome mapping and teacher review.{" "}
+            Malta national curriculum · Years 4–6. Official source research is
+            underway. These draft programmes cover part of the school
+            curriculum; complete outcome mapping, past-paper review and teacher
+            approval are pending.{" "}
             <a
               href="https://curriculum.gov.mt/"
               target="_blank"
@@ -123,6 +126,31 @@ export function Learn({ childId = "" }: { childId?: string }) {
               Official curriculum portal →
             </a>
           </p>
+          <details className="programme-coverage">
+            <summary>School programme and remaining coverage</summary>
+            <p>
+              {sourceResearch.downloadedFiles} official syllabus, assessment and
+              procedure files collected. The courses below are at different
+              stages; this is not complete school or exam coverage.
+            </p>
+            {programmeCoverage.map((area) => (
+              <article key={area.subject}>
+                <h3>{area.subject}</h3>
+                <p>{area.requirements}</p>
+                <p>
+                  <strong>Current coverage:</strong> {area.available}
+                </p>
+                <small>{area.status}</small>
+                <div>
+                  {area.sources.map((url, index) => (
+                    <a key={url} href={url} target="_blank" rel="noreferrer">
+                      Official source {index + 1} →{" "}
+                    </a>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </details>
           <div className="topic-grid">
             {topics
               .filter(
@@ -147,7 +175,12 @@ export function Learn({ childId = "" }: { childId?: string }) {
                   <h2>{topic.title[kid?.language || "mt"]}</h2>
                   <p>{topic.description}</p>
                   <div className="topic-bottom">
-                    <span>{topic.steps} small steps · ~5 min</span>
+                    <span>
+                      {topic.practiceSteps ?? topic.steps} practice steps
+                      {topic.checkSteps
+                        ? ` + ${topic.checkSteps} topic checks`
+                        : ""}
+                    </span>
                     <button
                       className="arrow-button"
                       aria-label={"Start " + topic.title.en}

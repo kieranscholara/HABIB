@@ -9,6 +9,7 @@ import { homeworkSchema, homeworkKinds, homeworkLabel } from "./homework";
 import { rate } from "./auth";
 import { speechMarkup } from "./speech";
 import { speechParts } from "./speech-parts";
+import { createHash } from "node:crypto";
 const cache = new Map<
   string,
   { at: number; response: Uint8Array | string; type: string }
@@ -80,12 +81,14 @@ export async function transcribeRequest(
   );
   const start = performance.now();
   try {
-    const { child } = await transaction((db) =>
+    const { child, topic, session } = await transaction((db) =>
       ownedSession(db, parentId, sessionId, true),
     );
+    const recognitionLanguage =
+      topic.exercises[session.step]?.taskLanguage || child.language;
     const data = await (
       await providerFetch(
-        `https://${credentials.region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${child.language === "mt" ? "mt-MT" : "en-GB"}&format=detailed`,
+        `https://${credentials.region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${recognitionLanguage === "mt" ? "mt-MT" : "en-GB"}&format=detailed`,
         {
           method: "POST",
           headers: {
@@ -138,15 +141,24 @@ export async function speechRequest(
         requestId: z.string().uuid(),
         turnId: z.string().uuid().nullable(),
         part: z.number().int().min(0).max(49).default(0),
+        source: z.enum(["reply", "stimulus"]).default("reply"),
       })
       .strict(),
   );
   const credentials = azure();
-  const { child, topic } = await transaction((db) =>
+  const { child, topic, session } = await transaction((db) =>
     ownedSession(db, parentId, sessionId, true),
   );
   let text = topic.exercises[0].prompt[child.language];
-  if (input.turnId) {
+  if (input.source === "stimulus") {
+    const current = topic.exercises[session.step];
+    if (session.status !== "active" || !current?.stimulus)
+      throw new AppError(
+        "STIMULUS_UNAVAILABLE",
+        "There is no recording for this activity.",
+      );
+    text = current.stimulus;
+  } else if (input.turnId) {
     const rows = await transaction((db) =>
       db.all<{ response_json: string }>(
         "SELECT response_json FROM tutor_turns WHERE id=? AND session_id=?",
@@ -172,7 +184,7 @@ export async function speechRequest(
     "Cache-Control": "no-store",
     "X-Speech-Parts": String(parts.length),
   };
-  const key = `${parentId}:${sessionId}:${input.turnId ?? "opening"}:${input.part}:${input.requestId}`;
+  const key = `${parentId}:${sessionId}:${input.source}:${createHash("sha256").update(text).digest("hex")}:${input.turnId ?? "opening"}:${input.part}:${input.requestId}`;
   const prior = cached(key);
   if (prior)
     return new Response(new Uint8Array(prior.response as Uint8Array).buffer, {
@@ -192,7 +204,10 @@ export async function speechRequest(
           "Content-Type": "application/ssml+xml",
           "X-Microsoft-OutputFormat": "riff-16khz-16bit-mono-pcm",
         },
-        body: speechMarkup(parts[input.part], child.language),
+        body: speechMarkup(
+          parts[input.part],
+          input.source === "stimulus" ? "en" : child.language,
+        ),
       },
     );
     const audio = new Uint8Array(await response.arrayBuffer());

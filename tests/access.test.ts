@@ -125,6 +125,17 @@ describe("family boundaries and bounded usage", () => {
       transaction((db) => ownedSession(db, A, session)),
     ).rejects.toMatchObject({ code: "SUBSCRIPTION_REQUIRED" });
   });
+  it("preserves completed older short lessons without resetting progress when programmes expand", async () => {
+    await transaction((db) =>
+      db.run("UPDATE tutor_sessions SET status='complete',step=4 WHERE id=?", [
+        session,
+      ]),
+    );
+    const old = await transaction((db) => ownedSession(db, A, session, true));
+    expect(old.topic.legacy).toBe(true);
+    expect(old.topic.exercises).toHaveLength(4);
+    expect(old.session.step).toBe(4);
+  });
   it("removes dependent learning records when a parent is erased", async () => {
     await transaction((db) => db.run("DELETE FROM parents WHERE id=?", [A]));
     expect(

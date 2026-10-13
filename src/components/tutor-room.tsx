@@ -7,10 +7,23 @@ import { record } from "@/lib/record";
 import { preparePhoto } from "@/lib/photo";
 import { playSpeechQueue } from "@/lib/speech-parts";
 import { subjects } from "@/lib/subjects";
+import type { Activity } from "@/lib/learning-coach";
+import type { CheckSummary } from "@/lib/topic-check";
+import type { taskDetails } from "@/lib/open-response";
+type Task = ReturnType<typeof taskDetails>;
+import { LearningActivity } from "./learning-activity";
 import type { Homework } from "@/lib/homework";
 import { HomeworkScan, type ScannedQuestion } from "./homework-scan";
 import { Shell, ErrorNote, ProgressBar } from "./ui";
 interface Turn {
+  task?: Task;
+  submissionReceived?: boolean;
+  needsReview?: boolean;
+  reviewQuestion?: number | null;
+  phase?: "practice" | "check";
+  checkSummary?: CheckSummary | null;
+  activity?: Activity | null;
+  revealed?: boolean;
   choices?: string[];
   id: string;
   text: string;
@@ -25,6 +38,9 @@ interface Turn {
   totalMs?: number;
 }
 interface Lesson {
+  task?: Task;
+  phase?: "practice" | "check";
+  activity?: Activity | null;
   choices?: string[];
   session: { step: number; status: string };
   child: { nickname: string; language: "mt" | "en" };
@@ -51,7 +67,8 @@ export function TutorRoom({
     [showScanner, setShowScanner] = useState(scan),
     [questions, setQuestions] = useState<ScannedQuestion[]>([]),
     [voiceEnabled, setVoiceEnabled] = useState(false),
-    [timing, setTiming] = useState({ transcription: 0, tutor: 0, speech: 0 });
+    [timing, setTiming] = useState({ transcription: 0, tutor: 0, speech: 0 }),
+    [workingNotes, setWorkingNotes] = useState<Record<number, string>>({});
   const stop = useRef<null | (() => Promise<Blob>)>(null),
     abort = useRef<AbortController | null>(null),
     busy = useRef(false),
@@ -63,9 +80,11 @@ export function TutorRoom({
     playback = useRef(0),
     turnRef = useRef<Turn[]>([]),
     lessonRef = useRef<Lesson | null>(null),
-    pending = useRef<{ id: string; text: string } | null>(null),
+    pending = useRef<{ id: string; text: string; intent: string } | null>(null),
+    selectedReview = useRef<number | undefined>(undefined),
     lastAudio = useRef<{
       turnId: string | null;
+      source: string;
       parts: Map<number, Blob>;
       requests: Map<number, string>;
       total: number;
@@ -82,6 +101,7 @@ export function TutorRoom({
     lessonRef.current = data;
     setLesson(data);
     updateTurns(data.turns);
+    selectedReview.current = data.turns.at(-1)?.reviewQuestion ?? undefined;
   }
   function clearAudio() {
     playback.current++;
@@ -163,7 +183,11 @@ export function TutorRoom({
       behavior: "smooth",
     });
   }, [turns, state, questions]);
-  async function submit(input = text, transcription = 0) {
+  async function submit(
+    input = text,
+    transcription = 0,
+    intent: "answer" | "feedback" | "continue" = "answer",
+  ) {
     if (busy.current || !input.trim()) return;
     busy.current = true;
     clearAudio();
@@ -172,8 +196,12 @@ export function TutorRoom({
     const current = generation.current,
       start = performance.now(),
       wasVoice = voice.current;
-    if (!pending.current || pending.current.text !== input)
-      pending.current = { id: crypto.randomUUID(), text: input };
+    if (
+      !pending.current ||
+      pending.current.text !== input ||
+      pending.current.intent !== intent
+    )
+      pending.current = { id: crypto.randomUUID(), text: input, intent };
     const history = turnRef.current
       .flatMap((t) => [
         ...(t.input ? [{ role: "user", text: t.input }] : []),
@@ -187,7 +215,11 @@ export function TutorRoom({
         body: JSON.stringify({
           clientTurnId: pending.current.id,
           text: input,
+          intent,
           history,
+          ...(selectedReview.current !== undefined
+            ? { reviewQuestion: selectedReview.current }
+            : {}),
           conversation: true,
         }),
         signal: controller(),
@@ -203,7 +235,7 @@ export function TutorRoom({
           },
         ]);
       pending.current = null;
-      setText("");
+      if (!reply.submissionReceived) setText("");
       setTiming({ transcription, tutor: reply.tutorMs, speech: 0 });
       setState("idle");
       busy.current = false;
@@ -311,6 +343,7 @@ export function TutorRoom({
   async function play(
     turnId: string | null = turnRef.current.at(-1)?.id || null,
     continueListening = false,
+    source: "reply" | "stimulus" = "reply",
   ) {
     if (busy.current) return;
     busy.current = true;
@@ -322,10 +355,22 @@ export function TutorRoom({
       signal = controller();
     const playbackId = playback.current;
     const cached =
-      lastAudio.current?.turnId === turnId
+      lastAudio.current?.turnId === turnId &&
+      lastAudio.current?.source ===
+        (source === "stimulus"
+          ? "stimulus:" +
+            (turnRef.current.at(-1)?.task || lessonRef.current?.task)
+              ?.stimulusId
+          : source)
         ? lastAudio.current
         : {
             turnId,
+            source:
+              source === "stimulus"
+                ? "stimulus:" +
+                  (turnRef.current.at(-1)?.task || lessonRef.current?.task)
+                    ?.stimulusId
+                : source,
             parts: new Map<number, Blob>(),
             requests: new Map<number, string>(),
             total: 1,
@@ -343,6 +388,7 @@ export function TutorRoom({
           requestId: cached.requests.get(part),
           turnId,
           part,
+          source,
         }),
         signal,
       });
@@ -574,6 +620,13 @@ export function TutorRoom({
     subjectName = subjects.find(
       (subject) => subject.id === (lesson?.topic.subject || "maths"),
     )!.title[lang];
+  const phase = last?.phase || lesson?.phase || "practice";
+  const task = last ? last.task : lesson?.task;
+  const openTask = !done && task?.mode === "open";
+  const submitted = !!last?.submissionReceived;
+  const summary = [...turns]
+    .reverse()
+    .find((turn) => turn.checkSummary)?.checkSummary;
   return (
     <Shell>
       <div className="tutor-heading">
@@ -604,6 +657,12 @@ export function TutorRoom({
               <p>{lesson.topic.description}</p>
               <ProgressBar value={progress} />
               <small>{Math.round(progress)}% of lesson steps completed</small>
+              {lesson.topic.legacy && (
+                <p>
+                  This completed lesson used the earlier short programme. Start
+                  a fresh lesson to use the expanded practice and topic check.
+                </p>
+              )}
             </div>
             <div className="note">
               <span>☀</span>
@@ -697,7 +756,197 @@ export function TutorRoom({
                   </Link>
                 </div>
               )}
+              {summary && (
+                <section
+                  className="topic-check-summary"
+                  aria-label="Topic check review"
+                >
+                  <h3>
+                    {lang === "mt" ? "Prova tas-suġġett" : "Topic check"}:{" "}
+                    {summary.correct}/{summary.total}
+                  </h3>
+                  <p>
+                    {lang === "mt"
+                      ? "Dan huwa riżultat tal-prattika, mhux marka uffiċjali ta’ eżami."
+                      : "This is a practice result, not an official exam grade."}
+                  </p>
+                  {summary.review.map((item, index) => (
+                    <details key={index}>
+                      <summary>
+                        {index + 1}.{" "}
+                        {item.correct
+                          ? lang === "mt"
+                            ? "Tajjeb"
+                            : "Correct"
+                          : lang === "mt"
+                            ? "Erġa’ pprattika"
+                            : "Practise this"}
+                      </summary>
+                      <p>{item.question}</p>
+                      <p>{item.working}</p>
+                      <button
+                        type="button"
+                        className="button secondary small"
+                        disabled={[
+                          "thinking",
+                          "uploading",
+                          "scanning",
+                        ].includes(state)}
+                        onClick={() => {
+                          cancel();
+                          setState("idle");
+                          selectedReview.current = item.questionStep;
+                          void submit(
+                            lang === "mt"
+                              ? "Spjega din il-mistoqsija pass pass."
+                              : "Explain this question step by step.",
+                          );
+                        }}
+                      >
+                        {lang === "mt"
+                          ? "Spjega din il-mistoqsija"
+                          : "Explain this question"}
+                      </button>
+                      {workingNotes[item.questionStep] && (
+                        <p>
+                          {lang === "mt"
+                            ? "Il-passi li ktibt:"
+                            : "Your working notes:"}{" "}
+                          {workingNotes[item.questionStep]}
+                        </p>
+                      )}
+                    </details>
+                  ))}
+                </section>
+              )}
             </div>
+            {!done &&
+              phase !== "check" &&
+              (last ? last.activity : lesson.activity) && (
+                <LearningActivity
+                  key={`${sessionId}:${last?.step ?? lesson.session.step}`}
+                  activity={(last ? last.activity : lesson.activity)!}
+                  language={lang}
+                  disabled={[
+                    "thinking",
+                    "uploading",
+                    "permission",
+                    "scanning",
+                  ].includes(state)}
+                  onAnswer={(value) => {
+                    cancel();
+                    setState("idle");
+                    void submit(value);
+                  }}
+                />
+              )}
+            {!done && task?.stimulusAvailable && (
+              <section
+                className="listening-stimulus"
+                aria-label="Listening recording"
+              >
+                <p>
+                  Listen to the English recording, then answer the question. You
+                  can replay it.
+                </p>
+                <button
+                  className="button secondary small"
+                  disabled={
+                    !speech ||
+                    [
+                      "thinking",
+                      "uploading",
+                      "permission",
+                      "scanning",
+                    ].includes(state)
+                  }
+                  onClick={() => {
+                    cancel();
+                    setState("idle");
+                    void play(null, voice.current, "stimulus");
+                  }}
+                >
+                  Play task recording
+                </button>
+                {!speech && (
+                  <p>
+                    Speech is unavailable. The practice transcript is available
+                    below; this does not test listening.
+                  </p>
+                )}
+                {task.stimulusText && (
+                  <details>
+                    <summary>Practice transcript</summary>
+                    <p>{task.stimulusText}</p>
+                  </details>
+                )}
+              </section>
+            )}
+            {openTask && (
+              <section className="response-rubric" aria-label="Review criteria">
+                <p>
+                  Respond in English. Submit a draft for feedback, revise it,
+                  then choose Next activity after reviewing the criteria.
+                  Feedback is not a school mark.
+                </p>
+                <ul>
+                  {task.rubric.map((criterion) => (
+                    <li key={criterion}>{criterion}</li>
+                  ))}
+                </ul>
+                {task.kind === "speaking" && (
+                  <p>
+                    Speak using the microphone or voice conversation. An adult
+                    should review pronunciation and fluency.
+                  </p>
+                )}
+                <button
+                  className="text-button"
+                  disabled={working}
+                  onClick={() => void submit("I don't know how to start")}
+                >
+                  Help me start
+                </button>
+                {submitted && (
+                  <button
+                    className="button secondary small"
+                    disabled={working}
+                    onClick={() => void submit("Next activity", 0, "continue")}
+                  >
+                    Next activity
+                  </button>
+                )}
+              </section>
+            )}
+            {!done && phase === "check" && (
+              <p className="topic-check-note" role="status">
+                {lang === "mt"
+                  ? "Prova mingħajr ħjiel. It-tweġibiet u l-passi jidhru fl-aħħar. Għid ‘ma nafx’ biex taqbeż mistoqsija."
+                  : "Topic check: try without hints. Answers and working appear at the end. Say ‘I don’t know’ to skip a question."}
+              </p>
+            )}
+            {!done && phase === "check" && (
+              <label className="working-notes">
+                {lang === "mt"
+                  ? "Ikteb il-passi tiegħek (fakultattiv)"
+                  : "Write your working (optional)"}
+                <textarea
+                  value={workingNotes[last?.step ?? lesson.session.step] || ""}
+                  maxLength={3000}
+                  onChange={(e) =>
+                    setWorkingNotes({
+                      ...workingNotes,
+                      [last?.step ?? lesson.session.step]: e.target.value,
+                    })
+                  }
+                />
+                <small>
+                  {lang === "mt"
+                    ? "Il-passi jibqgħu f’din il-paġna. Għall-prova, daħħal it-tweġiba finali fil-kaxxa taħt. Il-passi ma jiġux immarkati awtomatikament."
+                    : "Notes stay on this page. Enter your final answer in the answer box below. Working is not automatically graded."}
+                </small>
+              </label>
+            )}
             <div className="controls">
               <div
                 className={"voice-session " + (voiceEnabled ? "active" : "")}
@@ -828,26 +1077,42 @@ export function TutorRoom({
                 className="answer-form"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  void submit(text, timing.transcription);
+                  void submit(
+                    text,
+                    timing.transcription,
+                    openTask ? "feedback" : "answer",
+                  );
                 }}
               >
                 <label className="sr-only" htmlFor="answer">
                   Your answer or question
                 </label>
-                <input
-                  id="answer"
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  disabled={working}
-                  maxLength={500}
-                  placeholder={
-                    lang === "mt"
-                      ? "Staqsi jew wieġeb hawn…"
-                      : "Ask a question or answer here…"
-                  }
-                />
+                {openTask ? (
+                  <textarea
+                    id="answer"
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    disabled={working}
+                    maxLength={4000}
+                    rows={5}
+                    placeholder="Write or revise your English draft here…"
+                  />
+                ) : (
+                  <input
+                    id="answer"
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    disabled={working}
+                    maxLength={500}
+                    placeholder={
+                      lang === "mt"
+                        ? "Staqsi jew wieġeb hawn…"
+                        : "Ask a question or answer here…"
+                    }
+                  />
+                )}
                 <button
-                  aria-label="Send answer"
+                  aria-label={openTask ? "Submit for feedback" : "Send answer"}
                   disabled={working || !text.trim()}
                 >
                   ↑

@@ -29,17 +29,17 @@ export default function Page() {
           Speech recordings are sent to Azure for recognition, then discarded by
           the app. Generated audio parts and recognition results may be held in
           server memory for up to one minute for safe retries. When enabled,
-          short tutoring questions, up to eight recent dialogue messages and
-          previous tutor explanations from the current lesson are sent to OpenAI
-          for contextual explanations of the selected school subject that avoid
-          repetition. Child dialogue context is kept in the current browser tab.
-          In voice conversation, the microphone stays active while the tutor
-          speaks so you can interrupt; only your captured turn is sent for
-          recognition. Camera previews stay on your device until you capture a
-          photo. Homework photos are sent to OpenAI for extraction and are not
-          written to storage. Avoid faces, names or personal information in
-          photos. Provider retention and processing contracts must be reviewed
-          separately.
+          tutoring questions and English practice drafts, up to eight recent
+          dialogue messages and previous tutor explanations from the current
+          lesson are sent to OpenAI for contextual explanations of the selected
+          school subject that avoid repetition. Child dialogue context is kept
+          in the current browser tab. In voice conversation, the microphone
+          stays active while the tutor speaks so you can interrupt; only your
+          captured turn is sent for recognition. Camera previews stay on your
+          device until you capture a photo. Homework photos are sent to OpenAI
+          for extraction and are not written to storage. Avoid faces, names or
+          personal information in photos. Provider retention and processing
+          contracts must be reviewed separately.
         </p>
         <h2>What is saved</h2>
         <p>
@@ -48,8 +48,10 @@ export default function Page() {
           correct/incorrect attempts, progress, subscription status and metered
           usage. Child input text is not saved as a full transcript. Tutor reply
           captions, including generated explanations, are retained for at most
-          24 hours by the retention task. Financial records held by Stripe
-          follow its requirements.
+          24 hours by the retention task. Feedback captions can include excerpts
+          or revisions of a draft. Drawings, highlighted words and working notes
+          stay in the browser tab and are not sent to the tutor. Financial
+          records held by Stripe follow its requirements.
         </p>
         <h2>Your choices</h2>
         <p>

@@ -91,9 +91,13 @@ test("subject selection, checked word answers and a specific worked explanation 
     .getByRole("textbox", { name: "Your answer or question" })
     .fill("spjega");
   await page.getByRole("button", { name: "Send answer" }).click();
-  await expect(page.locator(".bubble.tutor").last()).toContainText("Solidu");
-  await expect(page.locator(".bubble.tutor").last()).toContainText("likwidu");
-  await page.getByRole("button", { name: "solidu", exact: true }).click();
+  await expect(page.locator(".bubble.tutor").last()).toContainText(
+    "Liema stat",
+  );
+  await page
+    .getByRole("textbox", { name: "Your answer or question" })
+    .fill("solidu");
+  await page.getByRole("button", { name: "Send answer" }).click();
   await expect(page.locator(".bubble.tutor").last()).toContainText("tajjeb");
   expect(
     await page.evaluate(
@@ -172,7 +176,22 @@ for (const width of [390, 1280])
       .getByRole("button", { name: "Start Fractions", exact: true })
       .click();
     await expect(page).toHaveURL(/tutor\?session=/);
-    for (const [i, value] of ["Ma fhimtx", "5", "15", "6", "12"].entries()) {
+    for (const [i, value] of [
+      "Ma fhimtx",
+      "5",
+      "15",
+      "6",
+      "12",
+      "7",
+      "21",
+      "8",
+      "16",
+      "7",
+      "28",
+      "24",
+      "18",
+      "32",
+    ].entries()) {
       await page
         .getByRole("textbox", { name: "Your answer or question" })
         .fill(value);
@@ -596,7 +615,7 @@ test("camera denial and an unreadable upload do not block a later photo; Safari 
   await page.getByRole("button", { name: "Confirm & explain" }).click();
   await expect(page.locator(".topic-card")).toContainText("10 + 5");
 });
-test("repeated requests for simpler explanations change approach without advancing the exercise", async ({
+test("repeated confusion changes approach three times, then reveals the answer and advances with assistance", async ({
   request,
 }) => {
   await signup(request);
@@ -621,8 +640,9 @@ test("repeated requests for simpler explanations change approach without advanci
     });
     expect(response.status()).toBe(200);
     const reply = await response.json();
-    expect(reply.step).toBe(0);
+    expect(reply.step).toBe(i < 3 ? 0 : 1);
     expect(reply.correct).toBeNull();
+    expect(reply.revealed).toBe(i === 3);
     replies.push(reply.text);
   }
   expect(new Set(replies).size).toBe(4);

@@ -1606,6 +1606,48 @@ button {
   background: none;
   color: #68824f;
 }
+.answer-form textarea {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  resize: vertical;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.listening-stimulus,
+.response-rubric {
+  padding: 16px;
+  margin: 16px 0;
+  background: #f2f5ec;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.response-rubric ul {
+  padding-left: 22px;
+}
+.garden-scene {
+  display: block;
+  width: 100%;
+  max-width: 440px;
+  margin: 12px auto;
+  border-radius: 10px;
+}
+.fraction-bar {
+  display: flex;
+  gap: 2px;
+}
+.fraction-bar button {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 2px;
+  border: 1px solid #7e9270;
+  background: white;
+}
+.fraction-bar button[aria-pressed="true"] {
+  background: #bed3a5;
+}
 .answer-form input::placeholder {
   color: #b1bd9f;
 }
@@ -2364,4 +2406,185 @@ button {
     font-size: 8px;
     padding: 8px 5px;
   }
+}
+
+.learning-activity {
+  padding: 20px;
+  border-top: 1px solid var(--line);
+  background: #f4f7ef;
+}
+.learning-activity h3 {
+  margin: 0 0 10px;
+}
+.learning-activity p {
+  margin: 10px 0;
+  line-height: 1.55;
+}
+.learning-activity button {
+  cursor: pointer;
+}
+.learning-activity form {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+  margin-top: 15px;
+}
+.learning-activity label {
+  display: grid;
+  gap: 8px;
+}
+.learning-activity input:not([type="range"]) {
+  max-width: 100%;
+  width: 170px;
+  padding: 10px;
+  border: 1px solid #c6d3c2;
+  border-radius: 8px;
+}
+.sharing-groups,
+.word-cards,
+.edge-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sharing-groups button {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  width: 100px;
+  min-height: 100px;
+  padding: 8px;
+  border: 1px solid #b9ccb2;
+  border-radius: 10px;
+  background: white;
+}
+.counter-dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.counter-dots i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #456e52;
+}
+.array-model {
+  display: grid;
+  gap: 4px;
+  max-width: 320px;
+}
+.array-model button {
+  min-width: 0;
+  aspect-ratio: 1;
+  border: 1px solid #8ead83;
+  background: white;
+  border-radius: 4px;
+}
+.array-model button.filled {
+  background: #456e52;
+}
+.word-cards button,
+.edge-buttons button {
+  padding: 10px;
+  background: white;
+  border: 1px solid #b9ccb2;
+  border-radius: 8px;
+}
+.word-cards button.eliminated {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+.learning-activity svg {
+  display: block;
+  width: 240px;
+  max-width: 100%;
+}
+.drawing-pad svg {
+  width: 100%;
+  border: 1px solid #b9ccb2;
+  background: white;
+  touch-action: none;
+}
+.learning-activity output {
+  display: inline-block;
+  padding: 8px;
+  font-weight: 700;
+}
+.topic-check-note,
+.topic-check-summary {
+  padding: 16px;
+  background: #f7efd9;
+  border-radius: 10px;
+  line-height: 1.5;
+  margin: 12px;
+}
+.topic-check-summary details {
+  padding: 8px 0;
+}
+.topic-check-summary summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.topic-check-summary p {
+  white-space: pre-wrap;
+}
+.evidence-passage {
+  padding: 12px;
+  border: 1px solid #b9ccb2;
+  border-radius: 10px;
+  background: white;
+  line-height: 2;
+}
+.evidence-passage button {
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  padding: 4px;
+  font: inherit;
+}
+.evidence-passage button.highlighted {
+  background: #f0d77e;
+}
+.word-cards button[aria-pressed="true"] {
+  outline: 2px solid #456e52;
+}
+.working-notes {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  font-size: 14px;
+}
+.working-notes textarea {
+  padding: 12px;
+  min-height: 95px;
+  border: 1px solid #bccbb6;
+  border-radius: 8px;
+  font: inherit;
+  resize: vertical;
+}
+.working-notes small {
+  line-height: 1.5;
+}
+.programme-coverage {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.programme-coverage summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.programme-coverage article {
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+.programme-coverage p {
+  line-height: 1.5;
+}
+.programme-coverage a {
+  display: inline-block;
+  margin: 8px 12px 0 0;
 }

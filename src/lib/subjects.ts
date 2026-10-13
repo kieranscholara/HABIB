@@ -21,5 +21,7 @@ export const nationalCurriculum = {
     "https://curriculum.gov.mt/",
     "https://www.schoolslearningoutcomes.edu.mt/",
   ],
-  verification: "pending" as const,
+  verification: "partial" as const,
+  completeCoverage: false,
+  pastPapersReviewed: false,
 };

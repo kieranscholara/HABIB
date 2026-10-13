@@ -26,6 +26,8 @@ export interface Kid {
   school_consented?: number;
 }
 export interface PublicTopic {
+  sourceRefs?: string[];
+  legacy?: boolean;
   subject: "maths" | "english" | "maltese" | "science";
   curriculum?: {
     name: string;
@@ -38,6 +40,8 @@ export interface PublicTopic {
   icon: string;
   description: string;
   steps: number;
+  practiceSteps?: number;
+  checkSteps?: number;
   approved: boolean;
 }
 export interface Me {

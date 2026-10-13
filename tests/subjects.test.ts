@@ -29,7 +29,7 @@ it("provides uniquely identified, answerable courses for every subject and suppo
           expect(
             teaching(topic, step, 0, String(topic.exercises[step].answer), "en")
               .correct,
-          ).toBe(true);
+          ).toBe(topic.exercises[step].responseMode === "open" ? null : true);
     }
 });
 it("shows all the worked steps and final answer for confirmed homework without advancing the lesson", () => {
@@ -47,7 +47,9 @@ it("shows all the worked steps and final answer for confirmed homework without a
 });
 it("does not falsely mark inaccessible official outcome mappings as verified", () => {
   expect(nationalCurriculum.name).toBe("Malta national curriculum");
-  expect(nationalCurriculum.verification).toBe("pending");
+  expect(nationalCurriculum.verification).toBe("partial");
+  expect(nationalCurriculum.completeCoverage).toBe(false);
+  expect(nationalCurriculum.pastPapersReviewed).toBe(false);
 });
 it("does not repeat the curated subject explanation twice within one reply", () => {
   const topic = topicById("Y4-SCIENCE-PLANTS")!;

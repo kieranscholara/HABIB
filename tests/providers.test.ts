@@ -82,6 +82,66 @@ function recording(requestId = randomUUID(), bytes = wav()) {
     body: bytes,
   });
 }
+it("reads only the current trusted English listening stimulus, even for a Maltese profile, and recognises the task language", async () => {
+  await transaction(async (db) => {
+    await db.run(
+      "UPDATE consents SET purpose='school_tutoring',policy_version='1.1' WHERE child_id=?",
+      [childId],
+    );
+    await db.run(
+      "UPDATE tutor_sessions SET topic_id='Y5-ENGLISH-LISTENING' WHERE id=?",
+      [sessionId],
+    );
+  });
+  fetchProvider.mockResolvedValueOnce(new Response(wav()));
+  const response = await speechRequest(
+    new NextRequest("http://localhost:3000", {
+      method: "POST",
+      body: JSON.stringify({
+        requestId: randomUUID(),
+        turnId: null,
+        source: "stimulus",
+      }),
+    }),
+    parentId,
+    sessionId,
+  );
+  expect(response.status).toBe(200);
+  const ssml = fetchProvider.mock.calls[0][1].body;
+  expect(ssml).toContain("en-GB-SoniaNeural");
+  expect(ssml).toContain("Welcome to the school garden club");
+  expect(ssml).not.toContain("On which day");
+  fetchProvider.mockResolvedValueOnce(
+    new Response(
+      JSON.stringify({
+        RecognitionStatus: "Success",
+        NBest: [{ Display: "The club meets on Tuesday.", Confidence: 0.95 }],
+      }),
+    ),
+  );
+  await transcribeRequest(recording(), parentId, sessionId);
+  expect(fetchProvider.mock.calls[1][0]).toContain("language=en-GB");
+  await transaction((db) =>
+    db.run(
+      "UPDATE tutor_sessions SET step=0,topic_id='Y5-FRACTIONS' WHERE id=?",
+      [sessionId],
+    ),
+  );
+  await expect(
+    speechRequest(
+      new NextRequest("http://localhost:3000", {
+        method: "POST",
+        body: JSON.stringify({
+          requestId: randomUUID(),
+          turnId: null,
+          source: "stimulus",
+        }),
+      }),
+      parentId,
+      sessionId,
+    ),
+  ).rejects.toMatchObject({ code: "STIMULUS_UNAVAILABLE" });
+});
 it("sends homework image bytes to the vision provider and returns only confirmed supported parameters", async () => {
   vi.stubEnv("HABIB_OPENAI_KEY", "fixture_not_a_credential");
   const bytes = new Uint8Array([255, 216, 255, 224, 0, 1, 255, 217]);
