@@ -1,6 +1,6 @@
 import type { Topic, Language } from "./curriculum";
 import { teaching } from "./curriculum";
-import { coachPractice, coachingState } from "./learning-coach";
+import { coachPractice, coachingState, learningPlan } from "./learning-coach";
 import { isTopicCheck } from "./topic-check";
 
 export type ResponseIntent = "answer" | "feedback" | "continue";
@@ -12,7 +12,12 @@ export interface ReviewTurn {
 export function taskDetails(topic: Topic, step: number, language: Language) {
   const e = topic.exercises[step];
   if (!e) return null;
+  const activity = learningPlan(topic, step, language).activity;
   return {
+    material:
+      activity?.kind === "reading" || activity?.kind === "scene"
+        ? activity
+        : null,
     mode: e.responseMode || "closed",
     kind: e.responseKind || null,
     language: e.taskLanguage || language,

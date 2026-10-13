@@ -36,7 +36,7 @@ import { homeworkSchema } from "@/lib/homework";
 import { appVersion } from "@/lib/version";
 import { subjects, nationalCurriculum } from "@/lib/subjects";
 import { workedExplanation } from "@/lib/worked-explanation";
-import { learningPlan } from "@/lib/learning-coach";
+import { visualSupportActivity } from "@/lib/learning-coach";
 import { isTopicCheck, checkTurn, checkSummary } from "@/lib/topic-check";
 import { billing, webhook } from "@/lib/billing";
 export const runtime = "nodejs";
@@ -411,6 +411,7 @@ async function handler(req: NextRequest, context: Context) {
             "SELECT response_json FROM tutor_turns WHERE session_id=? ORDER BY turn_index",
             [sessionId],
           );
+          const recorded = turns.map((turn) => JSON.parse(turn.response_json));
           return json({
             session,
             child: {
@@ -430,10 +431,28 @@ async function handler(req: NextRequest, context: Context) {
                 ? taskDetails(topic, session.step, child.language)
                 : null,
             activity:
-              session.status === "active" && !isTopicCheck(topic, session.step)
-                ? learningPlan(topic, session.step, child.language).activity
+              session.status === "active"
+                ? visualSupportActivity(
+                    topic,
+                    session.step,
+                    child.language,
+                    recorded.at(-1)?.coaching,
+                  )
                 : null,
-            turns: turns.map((t) => JSON.parse(t.response_json)),
+            turns: recorded.map((turn) => ({
+              ...turn,
+              activity: !turn.complete
+                ? visualSupportActivity(
+                    topic,
+                    turn.step,
+                    child.language,
+                    turn.coaching,
+                  )
+                : null,
+              task: !turn.complete
+                ? taskDetails(topic, turn.step, child.language)
+                : null,
+            })),
           });
         });
       if (parts[2] === "end" && method === "POST")
@@ -739,11 +758,14 @@ async function handler(req: NextRequest, context: Context) {
                 : null,
             coaching: currentPractice?.coaching || null,
             revealed: currentPractice?.revealed || false,
-            activity:
-              !done && !isTopicCheck(topic, result.nextStep)
-                ? currentPractice?.activity ||
-                  learningPlan(topic, result.nextStep, child.language).activity
-                : null,
+            activity: !done
+              ? visualSupportActivity(
+                  topic,
+                  result.nextStep,
+                  child.language,
+                  currentPractice?.coaching,
+                )
+              : null,
             tutorMs: Math.round(performance.now() - start),
             choices:
               currentPractice?.choices ||

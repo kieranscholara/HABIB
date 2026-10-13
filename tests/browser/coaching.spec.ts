@@ -41,6 +41,10 @@ test("small-step coaching survives a reload, checks the small answer separately 
   page,
 }) => {
   const id = await lesson(page);
+  await page.goto(`/tutor?session=${id}`);
+  await expect(
+    page.getByRole("region", { name: "Explore the question" }),
+  ).toHaveCount(0);
   const turn = {
     clientTurnId: randomUUID(),
     text: "I don't know",
@@ -56,6 +60,9 @@ test("small-step coaching survives a reload, checks the small answer separately 
   ).toEqual(first);
   await page.goto(`/tutor?session=${id}`);
   await page.reload();
+  await expect(
+    page.getByRole("region", { name: "Explore the question" }),
+  ).toBeVisible();
   await expect(page.locator(".bubble.tutor").last()).toContainText(
     "How many equal parts",
   );
@@ -77,6 +84,11 @@ test("small-step coaching survives a reload, checks the small answer separately 
   ).json();
   expect(final.correct).toBe(true);
   expect(final.step).toBe(1);
+  expect(final.activity).toBeNull();
+  await page.reload();
+  await expect(
+    page.getByRole("region", { name: "Explore the question" }),
+  ).toHaveCount(0);
   const data = await (await page.request.get("/api/v1/progress")).json();
   expect(data.progress[0].questions_attempted).toBe(1);
   expect(data.progress[0].correct_count).toBe(1);
@@ -88,6 +100,12 @@ test("sharing counters is interactive on mobile and an answer revealed after fou
   const id = await lesson(page);
   await page.goto(`/tutor?session=${id}`);
   const activity = page.getByRole("region", { name: "Explore the question" });
+  await expect(activity).toHaveCount(0);
+  await page
+    .getByRole("textbox", { name: "Your answer or question" })
+    .fill("I don't know");
+  await page.getByRole("button", { name: "Send answer" }).click();
+  await expect(activity).toBeVisible();
   await activity
     .getByRole("button", { name: "Share one to each group" })
     .click();
@@ -114,12 +132,12 @@ test("sharing counters is interactive on mobile and an answer revealed after fou
   await expect(
     activity.getByLabel("Drawing space").locator("polyline"),
   ).toHaveCount(0);
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 3; i++) {
     await page
       .getByRole("textbox", { name: "Your answer or question" })
       .fill("I don't know");
     await page.getByRole("button", { name: "Send answer" }).click();
-    await expect(page.locator(".bubble.you")).toHaveCount(i + 1);
+    await expect(page.locator(".bubble.you")).toHaveCount(i + 2);
   }
   await expect(page.locator(".bubble.tutor").last()).toContainText(
     "20 ÷ 4 = 5",
@@ -132,6 +150,7 @@ test("sharing counters is interactive on mobile and an answer revealed after fou
   expect(data.attempts[0].is_correct).toBe(0);
   expect(data.attempts[0].question_id).toContain(":assisted");
   expect(data.progress[0].correct_count).toBe(0);
+  await expect(activity).toHaveCount(0);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -206,6 +225,45 @@ test("a topic has varied preparation then a check without hints, with a saved re
   ).json();
   expect(reviewed.turns.at(-1).reviewQuestion).toBe(10);
   expect(reviewed.session.step).toBe(13);
+});
+test("an incorrect answer activates visual help only for that question, then solving it clears the help", async ({
+  page,
+}) => {
+  const id = await lesson(page);
+  await page.goto(`/tutor?session=${id}`);
+  const activity = page.getByRole("region", { name: "Explore the question" });
+  await expect(activity).toHaveCount(0);
+  await page
+    .getByRole("textbox", { name: "Your answer or question" })
+    .fill("6");
+  await page.getByRole("button", { name: "Send answer" }).click();
+  await expect(activity).toBeVisible();
+  await page
+    .getByRole("textbox", { name: "Your answer or question" })
+    .fill("5");
+  await page.getByRole("button", { name: "Send answer" }).click();
+  await expect(activity).toHaveCount(0);
+  await page.reload();
+  await expect(activity).toHaveCount(0);
+});
+test("essential question pictures remain available without explanatory controls until help is needed", async ({
+  page,
+}) => {
+  const id = await lesson(page, "Y5-ENGLISH-SPEAKING");
+  await page.goto(`/tutor?session=${id}`);
+  const material = page.getByRole("region", { name: "Question material" });
+  await expect(material.getByRole("img")).toBeVisible();
+  await expect(material.getByRole("button")).toHaveCount(0);
+  await expect(
+    page.getByRole("region", { name: "Explore the question" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Help me start" }).click();
+  const help = page.getByRole("region", { name: "Explore the question" });
+  await expect(help).toBeVisible();
+  await expect(
+    help.getByRole("button", { name: "Sketch your idea" }),
+  ).toBeVisible();
+  await expect(material).toHaveCount(0);
 });
 test("English drafts receive review without a correctness score, require a submission before continuing and retain the draft for revision", async ({
   page,
@@ -298,7 +356,7 @@ test("English listening has a recording control and practice transcript, with tr
   await page.route("**/api/v1/status", (route) =>
     route.fulfill({
       json: {
-        version: "0.6.0",
+        version: "0.6.1",
         speechConfigured: true,
         homeworkConfigured: false,
         conversationConfigured: false,

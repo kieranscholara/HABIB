@@ -622,6 +622,7 @@ export function TutorRoom({
     )!.title[lang];
   const phase = last?.phase || lesson?.phase || "practice";
   const task = last ? last.task : lesson?.task;
+  const activity = last ? last.activity : lesson?.activity;
   const openTask = !done && task?.mode === "open";
   const submitted = !!last?.submissionReceived;
   const summary = [...turns]
@@ -820,26 +821,34 @@ export function TutorRoom({
                 </section>
               )}
             </div>
-            {!done &&
-              phase !== "check" &&
-              (last ? last.activity : lesson.activity) && (
-                <LearningActivity
-                  key={`${sessionId}:${last?.step ?? lesson.session.step}`}
-                  activity={(last ? last.activity : lesson.activity)!}
-                  language={lang}
-                  disabled={[
-                    "thinking",
-                    "uploading",
-                    "permission",
-                    "scanning",
-                  ].includes(state)}
-                  onAnswer={(value) => {
-                    cancel();
-                    setState("idle");
-                    void submit(value);
-                  }}
-                />
-              )}
+            {!done && phase !== "check" && activity && (
+              <LearningActivity
+                key={`${sessionId}:${last?.step ?? lesson.session.step}`}
+                activity={activity}
+                language={lang}
+                disabled={[
+                  "thinking",
+                  "uploading",
+                  "permission",
+                  "scanning",
+                ].includes(state)}
+                onAnswer={(value) => {
+                  cancel();
+                  setState("idle");
+                  void submit(value);
+                }}
+              />
+            )}
+            {!done && !activity && task?.material && (
+              <LearningActivity
+                key={`material:${sessionId}:${last?.step ?? lesson.session.step}`}
+                activity={task.material}
+                language={lang}
+                disabled={working}
+                onAnswer={() => {}}
+                support={false}
+              />
+            )}
             {!done && task?.stimulusAvailable && (
               <section
                 className="listening-stimulus"

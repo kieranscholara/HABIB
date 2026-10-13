@@ -4,6 +4,7 @@ import {
   coachPractice,
   coachingState,
   learningPlan,
+  visualSupportActivity,
 } from "../src/lib/learning-coach";
 import { verifiedClaims } from "../src/lib/verified-maths";
 
@@ -32,6 +33,47 @@ it("gives three distinct small hints, then reveals the worked answer and moves o
   expect(new Set(turns.map((turn) => turn.text)).size).toBe(4);
   expect(turns[3].text).toContain("20 ÷ 4 = 5");
   expect(turns[3].text).toContain(topic.exercises[1].prompt.en);
+});
+it("only exposes visual support for valid active coaching on the current practice question", () => {
+  const topic = topicById("Y5-FRACTIONS")!;
+  expect(visualSupportActivity(topic, 0, "en")).toBeNull();
+  const greeting = coachPractice(
+    topic,
+    0,
+    0,
+    "Hello",
+    "en",
+    coachingState([], 0),
+  );
+  expect(visualSupportActivity(topic, 0, "en", greeting.coaching)).toBeNull();
+  const help = coachPractice(
+    topic,
+    0,
+    0,
+    "I don't know",
+    "en",
+    coachingState([], 0),
+  );
+  expect(visualSupportActivity(topic, 0, "en", help.coaching)).toMatchObject({
+    kind: "sharing",
+  });
+  expect(visualSupportActivity(topic, 1, "en", help.coaching)).toBeNull();
+  expect(
+    visualSupportActivity(topic, 0, "en", { ...help.coaching, active: false }),
+  ).toBeNull();
+  expect(visualSupportActivity(topic, 0, "en", { active: true })).toBeNull();
+  expect(
+    visualSupportActivity(topic, 10, "en", {
+      ...help.coaching,
+      questionStep: 10,
+    }),
+  ).toBeNull();
+  expect(
+    visualSupportActivity(topic, 13, "en", {
+      ...help.coaching,
+      questionStep: 13,
+    }),
+  ).toBeNull();
 });
 it("checks the small answer separately, resets unsuccessful attempts and resumes the original calculation", () => {
   const topic = topicById("Y5-FRACTIONS")!;

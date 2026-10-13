@@ -8,6 +8,7 @@ import {
 } from "./curriculum";
 import { calculate } from "./verified-maths";
 import { workedExplanation } from "./worked-explanation";
+import { needsSimplerExplanation } from "./explanation";
 
 export const helpAttemptLimit = 4;
 const stateSchema = z.object({
@@ -16,6 +17,7 @@ const stateSchema = z.object({
   failures: z.number().int().min(0).max(helpAttemptLimit),
   strategy: z.number().int().min(0).max(3),
   active: z.boolean(),
+  visuals: z.boolean().optional(),
 });
 export type CoachingState = z.infer<typeof stateSchema>;
 export type Activity =
@@ -65,7 +67,30 @@ export function coachingState(
     failures: 0,
     strategy: 0,
     active: false,
+    visuals: false,
   };
+}
+
+// Visual help belongs to the current question's active coaching, not the
+// lesson in general. Stored state is checked again when a session is loaded.
+export function visualSupportActivity(
+  topic: Topic,
+  step: number,
+  language: Language,
+  coaching?: unknown,
+): Activity | null {
+  const state = stateSchema.safeParse(coaching);
+  if (
+    !topic.exercises[step] ||
+    topic.homework ||
+    topic.exercises[step].stage === "check" ||
+    !state.success ||
+    !state.data.active ||
+    state.data.visuals === false ||
+    state.data.questionStep !== step
+  )
+    return null;
+  return learningPlan(topic, step, language).activity;
 }
 
 // Every small answer is derived from the current checked exercise, never from
@@ -593,6 +618,13 @@ export function coachPractice(
         : clean(text) === clean(answer),
     );
   const answeringSmallStep = state.active && index < plan.steps.length - 1;
+  const showVisuals =
+    (state.active && state.visuals !== false) ||
+    baseline.correct === false ||
+    needsSimplerExplanation(text) ||
+    /\b(?:help|why|how|explain|show|draw|picture|diagram|idk|dunno)\b|għinni|spjega|għaliex|kif/i.test(
+      text,
+    );
   if (baseline.correct === true && !(answeringSmallStep && microCorrect))
     return {
       ...baseline,
@@ -634,7 +666,7 @@ export function coachPractice(
       coaching: { ...state, failures, active: false },
       guide: null,
       revealed: true,
-      activity: next ? learningPlan(topic, step + 1, language).activity : null,
+      activity: null,
       choices: next?.choices?.[language] || [],
     };
   }
@@ -647,7 +679,7 @@ export function coachPractice(
     strategy,
     scaffoldStep: nextIndex,
     failures,
-    activity: plan.activity,
+    activity: showVisuals ? plan.activity : null,
   };
   const prefix = microCorrect
     ? language === "mt"
@@ -667,10 +699,11 @@ export function coachPractice(
       failures,
       strategy,
       active: true,
+      visuals: showVisuals,
     },
     guide,
     revealed: false,
-    activity: plan.activity,
+    activity: showVisuals ? plan.activity : null,
     choices: smallStep.choices || [],
   };
 }

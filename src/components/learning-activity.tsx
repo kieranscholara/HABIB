@@ -7,11 +7,13 @@ export function LearningActivity({
   language,
   disabled,
   onAnswer,
+  support = true,
 }: {
   activity: Activity;
   language: "en" | "mt";
   disabled: boolean;
   onAnswer: (text: string) => void;
+  support?: boolean;
 }) {
   const mt = language === "mt";
   const pair = (en: string, maltese: string) => (mt ? maltese : en);
@@ -40,17 +42,29 @@ export function LearningActivity({
   return (
     <section
       className="learning-activity"
-      aria-label={pair("Explore the question", "Esplora l-mistoqsija")}
+      aria-label={
+        support
+          ? pair("Explore the question", "Esplora l-mistoqsija")
+          : pair("Question material", "Materjal tal-mistoqsija")
+      }
     >
-      <h3>{pair("Try it with a picture", "Ipprova bit-tpinġija")}</h3>
+      <h3>
+        {support
+          ? pair("Try it with a picture", "Ipprova bit-tpinġija")
+          : activity.kind === "scene"
+            ? pair("Question picture", "Stampa tal-mistoqsija")
+            : pair("Reading passage", "Silta għall-qari")}
+      </h3>
       {activity.kind === "scene" && (
         <>
-          <p>
-            Explore the garden picture. Select an object to describe it.{" "}
-            {activity.compare
-              ? "Compare the sunny and rainy scenes."
-              : "Use position words and explain what is happening."}
-          </p>
+          {support && (
+            <p>
+              Explore the garden picture. Select an object to describe it.{" "}
+              {activity.compare
+                ? "Compare the sunny and rainy scenes."
+                : "Use position words and explain what is happening."}
+            </p>
+          )}
           {[false, ...(activity.compare ? [true] : [])].map((rain, index) => (
             <div key={index}>
               <strong>Picture {rain ? "B: rain" : "A: sunshine"}</strong>
@@ -120,22 +134,24 @@ export function LearningActivity({
               </svg>
             </div>
           ))}
-          <div className="word-cards">
-            {["plant", "tree", "watering can", "child"].map((object, i) => (
-              <button
-                key={object}
-                type="button"
-                aria-pressed={marked.includes(i)}
-                onClick={() => {
-                  setMarked([i]);
-                  setAnswer(`The ${object} `);
-                }}
-              >
-                {object}
-              </button>
-            ))}
-          </div>
-          {marked.length > 0 && (
+          {support && (
+            <div className="word-cards">
+              {["plant", "tree", "watering can", "child"].map((object, i) => (
+                <button
+                  key={object}
+                  type="button"
+                  aria-pressed={marked.includes(i)}
+                  onClick={() => {
+                    setMarked([i]);
+                    setAnswer(`The ${object} `);
+                  }}
+                >
+                  {object}
+                </button>
+              ))}
+            </div>
+          )}
+          {support && marked.length > 0 && (
             <p>
               {
                 [
@@ -176,29 +192,32 @@ export function LearningActivity({
           </p>
         </>
       )}
-      {activity.kind === "reading" && (
-        <>
-          <p>
-            {pair(
-              "Tap words to highlight the evidence for your answer. Read the passage again and check which details support it.",
-              "Agħfas il-kliem biex timmarka l-ħjiel għat-tweġiba. Erġa’ aqra s-silta u sib liema dettalji jsostnuha.",
-            )}
-          </p>
-          <div className="evidence-passage">
-            {activity.passage.split(/\s+/).map((text, index) => (
-              <button
-                type="button"
-                key={index}
-                aria-pressed={marked.includes(index)}
-                className={marked.includes(index) ? "highlighted" : ""}
-                onClick={() => toggle(index)}
-              >
-                {text}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      {activity.kind === "reading" &&
+        (support ? (
+          <>
+            <p>
+              {pair(
+                "Tap words to highlight the evidence for your answer. Read the passage again and check which details support it.",
+                "Agħfas il-kliem biex timmarka l-ħjiel għat-tweġiba. Erġa’ aqra s-silta u sib liema dettalji jsostnuha.",
+              )}
+            </p>
+            <div className="evidence-passage">
+              {activity.passage.split(/\s+/).map((text, index) => (
+                <button
+                  type="button"
+                  key={index}
+                  aria-pressed={marked.includes(index)}
+                  className={marked.includes(index) ? "highlighted" : ""}
+                  onClick={() => toggle(index)}
+                >
+                  {text}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p style={{ whiteSpace: "pre-wrap" }}>{activity.passage}</p>
+        ))}
       {activity.kind === "plant" && (
         <>
           {activity.seed ? (
@@ -668,14 +687,16 @@ export function LearningActivity({
           </div>
         </>
       )}
-      <button
-        type="button"
-        className="text-button"
-        onClick={() => setDraw(!draw)}
-      >
-        {pair("Sketch your idea", "Pinġi l-idea tiegħek")}
-      </button>
-      {draw && (
+      {support && (
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => setDraw(!draw)}
+        >
+          {pair("Sketch your idea", "Pinġi l-idea tiegħek")}
+        </button>
+      )}
+      {support && draw && (
         <div className="drawing-pad">
           <svg
             viewBox="0 0 300 160"
@@ -721,27 +742,32 @@ export function LearningActivity({
           </button>
         </div>
       )}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (answer.trim() && !disabled) {
-            onAnswer(answer);
-            setAnswer("");
-          }
-        }}
-      >
-        <label>
-          {pair("Answer from activity", "Tweġiba mill-attività")}
-          <input
-            value={answer}
-            maxLength={500}
-            onChange={(e) => setAnswer(e.target.value)}
-          />
-        </label>
-        <button className="button small" disabled={disabled || !answer.trim()}>
-          {pair("Check my answer", "Iċċekkja t-tweġiba")}
-        </button>
-      </form>
+      {support && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (answer.trim() && !disabled) {
+              onAnswer(answer);
+              setAnswer("");
+            }
+          }}
+        >
+          <label>
+            {pair("Answer from activity", "Tweġiba mill-attività")}
+            <input
+              value={answer}
+              maxLength={500}
+              onChange={(e) => setAnswer(e.target.value)}
+            />
+          </label>
+          <button
+            className="button small"
+            disabled={disabled || !answer.trim()}
+          >
+            {pair("Check my answer", "Iċċekkja t-tweġiba")}
+          </button>
+        </form>
+      )}
     </section>
   );
 }
